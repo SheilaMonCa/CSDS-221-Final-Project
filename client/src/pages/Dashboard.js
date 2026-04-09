@@ -1,215 +1,209 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast'; // Import the toaster
 import { useAuth } from '../context/AuthContext';
+import EyeIcon from '../components/EyeIcon';
+import './Dashboard.css';
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [groups, setGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user, logout } = useAuth();
+  const [stats, setStats] = useState({ winRate: '0%', total: 0 });
+  const [history, setHistory] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  
+  // Independent eye states
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  useEffect(() => {
-    fetchGroups();
-  }, []);
+  const [editData, setEditData] = useState({
+    username: user?.username || '',
+    email: user?.email || '',
+    newPass: '',
+    confirmPass: '',
+    currentPass: ''
+  });
 
-  const fetchGroups = async () => {
-    try {
-      const { data } = await axios.get(`/api/groups/user/${user.id}`);
-      setGroups(data);
-    } catch (err) {
-      setError('Failed to load groups');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createGroup = async (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
-    if (!newGroupName.trim()) return;
-    setCreating(true);
+    
+    const isChangingEmail = editData.email !== user.email;
+    const isChangingPass = editData.newPass !== "";
+
+    if ((isChangingEmail || isChangingPass) && !needsReauth) {
+      setNeedsReauth(true);
+      toast('Please confirm your current password to save sensitive changes.', { icon: '🔐' });
+      return;
+    }
+
+    if (isChangingPass && editData.newPass !== editData.confirmPass) {
+      return toast.error("New passwords do not match.");
+    }
+
     try {
-      const { data } = await axios.post('/api/groups', {
-        name: newGroupName,
-        user_id: user.id,
+      // Points to your updated auth route
+      await axios.put(`/api/auth/update/${user.id}`, {
+        username: editData.username,
+        email: editData.email,
+        newPass: editData.newPass,
+        currentPass: editData.currentPass
       });
-      setGroups([...groups, data]);
-      setNewGroupName('');
+      
+      toast.success("Profile updated successfully!");
       setShowModal(false);
+      setNeedsReauth(false);
+      setEditData(prev => ({ ...prev, newPass: '', confirmPass: '', currentPass: '' }));
     } catch (err) {
-      setError('Failed to create group');
-    } finally {
-      setCreating(false);
+      toast.error(err.response?.data?.error || "Update failed.");
     }
   };
 
-  const emojis = ['🎲', '🃏', '♟️', '🎯', '🎮', '🏆', '🎳', '🎰'];
-  const getEmoji = (name) => emojis[name.charCodeAt(0) % emojis.length];
+  const confirmDelete = async () => {
+    const loadingToast = toast.loading("Deleting account...");
+    try {
+      // Points to your delete route
+      await axios.delete(`/api/auth/delete/${user.id}`);
+      toast.success("Account deleted. See you around!", { id: loadingToast });
+      logout();
+    } catch (err) {
+      toast.error("Failed to delete account", { id: loadingToast });
+    }
+  };
+
+  const closeUpdateModal = () => {
+    setShowModal(false);
+    setNeedsReauth(false);
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
+    setEditData({
+      username: user.username,
+      email: user.email,
+      newPass: '',
+      confirmPass: '',
+      currentPass: ''
+    });
+  };
 
   return (
-    <div className="page">
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', marginBottom: '6px' }}>
-            Hey, {user.username} 👋
-          </h1>
-          <p style={{ color: 'var(--text-muted)' }}>
-            Select a group to view stats, or create a new one.
-          </p>
+    <div className="page dashboard-container">
+      <header className="dashboard-header">
+        <div className="header-left">
+          <h1 className="page-title">Hey, {user?.username} 👋</h1>
+          <p className="sub-text">Welcome back to your dashboard.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          + New Group
-        </button>
+        <div className="header-actions">
+          <button className="btn-subtle" onClick={() => setShowModal(true)}>
+            Update account info
+          </button>
+          <button className="btn-link-danger" onClick={() => setShowDeleteModal(true)}>
+            Delete Account
+          </button>
+        </div>
+      </header>
+
+      <div className="dashboard-grid">
+        <section className="card">
+          <h3>Recent Game History</h3>
+          <div className="history-list">
+            {history.length > 0 ? history.map((game, i) => (
+              <div key={i} className="history-item">
+                <div className="game-info">
+                  <div className="game-name">{game.game_name}</div>
+                  <div className="game-meta">{new Date(game.played_at).toLocaleDateString()}</div>
+                </div>
+                <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
+                  {game.is_win ? '🏆 WIN' : 'Played'}
+                </div>
+              </div>
+            )) : <p className="sub-text">No games recorded yet.</p>}
+          </div>
+        </section>
+
+        <section className="stats-sidebar">
+          <div className="card">
+            <h3>Quick Stats</h3>
+            <div className="stat-row"><span>Win Rate</span> <strong>{stats.winRate}</strong></div>
+            <div className="stat-row"><span>Total Games</span> <strong>{stats.total}</strong></div>
+          </div>
+        </section>
       </div>
 
-      {error && <div className="error">{error}</div>}
-
-      {/* Groups grid */}
-      {loading ? (
-        <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
-      ) : groups.length === 0 ? (
-        <EmptyState onCreateClick={() => setShowModal(true)} />
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '16px',
-        }}>
-          {groups.map(group => (
-            <GroupCard
-              key={group.id}
-              group={group}
-              emoji={getEmoji(group.name)}
-              onClick={() => navigate(`/group/${group.id}`)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Create group modal */}
       {showModal && (
-        <Modal onClose={() => setShowModal(false)}>
-          <h2 style={{ marginBottom: '6px' }}>Create a group</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
-            Give your friend group a name — you can invite members after.
-          </p>
-          <form onSubmit={createGroup}>
-            <div className="form-group">
-              <label>Group name</label>
-              <input
-                className="input"
-                placeholder="e.g. College Friends, Family..."
-                value={newGroupName}
-                onChange={e => setNewGroupName(e.target.value)}
-                autoFocus
-                required
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={creating}>
-                {creating ? 'Creating...' : 'Create group'}
-              </button>
-            </div>
-          </form>
-        </Modal>
+        <div className="modal-overlay">
+          <div className="modal-card card">
+            <h3>Update Profile</h3>
+            <form onSubmit={handleUpdate}>
+              <div className="form-group">
+                <label>Username</label>
+                <input className="input" value={editData.username} onChange={e => setEditData({...editData, username: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label>Email Address</label>
+                <input className="input" value={editData.email} onChange={e => setEditData({...editData, email: e.target.value})} />
+              </div>
+
+              <hr className="divider-line" />
+              
+              <div className="form-group">
+                <label>New Password (Optional)</label>
+                <div className="input-wrapper">
+                  <input className="input" type={showNew ? "text" : "password"} value={editData.newPass} onChange={e => setEditData({...editData, newPass: e.target.value})} />
+                  <button type="button" className="eye-btn" onClick={() => setShowNew(!showNew)}>
+                    <EyeIcon visible={showNew} />
+                  </button>
+                </div>
+              </div>
+
+              {editData.newPass && (
+                <div className="form-group">
+                  <label>Confirm New Password</label>
+                  <div className="input-wrapper">
+                    <input className="input" type={showConfirm ? "text" : "password"} value={editData.confirmPass} onChange={e => setEditData({...editData, confirmPass: e.target.value})} />
+                    <button type="button" className="eye-btn" onClick={() => setShowConfirm(!showConfirm)}>
+                      <EyeIcon visible={showConfirm} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {needsReauth && (
+                <div className="reauth-box">
+                  <p style={{ fontSize: '13px', marginBottom: '10px' }}>Enter current password to verify changes:</p>
+                  <div className="input-wrapper">
+                    <input className="input" type={showCurrent ? "text" : "password"} placeholder="Current Password" required value={editData.currentPass} onChange={e => setEditData({...editData, currentPass: e.target.value})} />
+                    <button type="button" className="eye-btn" onClick={() => setShowCurrent(!showCurrent)}>
+                      <EyeIcon visible={showCurrent} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost" onClick={closeUpdateModal}>Cancel</button>
+                <button type="submit" className="btn btn-primary">
+                  {needsReauth ? "Confirm Changes" : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
-    </div>
-  );
-}
 
-function GroupCard({ group, emoji, onClick }) {
-  return (
-    <div
-      className="card"
-      onClick={onClick}
-      style={{
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = 'var(--primary)';
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 212, 170, 0.12)';
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'var(--border)';
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = 'none';
-      }}
-    >
-      {/* Decorative background emoji */}
-      <div style={{
-        position: 'absolute', top: '-10px', right: '-4px',
-        fontSize: '80px', opacity: 0.06, userSelect: 'none',
-      }}>
-        {emoji}
-      </div>
-
-      <div style={{ fontSize: '32px', marginBottom: '14px' }}>{emoji}</div>
-      <h3 style={{ fontSize: '18px', marginBottom: '6px' }}>{group.name}</h3>
-      <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-        Created {new Date(group.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-      </p>
-
-      <div style={{
-        marginTop: '20px',
-        paddingTop: '16px',
-        borderTop: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>View stats & sessions</span>
-        <span style={{ color: 'var(--primary)', fontSize: '18px' }}>→</span>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ onCreateClick }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '80px 24px' }}>
-      <div style={{ fontSize: '64px', marginBottom: '20px' }}>🎲</div>
-      <h2 style={{ marginBottom: '10px' }}>No groups yet</h2>
-      <p style={{ color: 'var(--text-muted)', marginBottom: '28px', maxWidth: '360px', margin: '0 auto 28px' }}>
-        Create a group for your friend circle or family and start tracking who's the real champion.
-      </p>
-      <button className="btn btn-primary" onClick={onCreateClick}>
-        + Create your first group
-      </button>
-    </div>
-  );
-}
-
-function Modal({ children, onClose }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 200, padding: '24px',
-      }}
-    >
-      <div
-        className="card"
-        onClick={e => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: '440px' }}
-      >
-        {children}
-      </div>
+      {showDeleteModal && (
+        <div className="modal-overlay">
+          <div className="modal-card card">
+            <h2 style={{ color: 'var(--danger)' }}>⚠️ Irreversible Action</h2>
+            <p style={{ margin: '16px 0', color: 'var(--text-muted)' }}>Are you sure? Account history will be anonymized.</p>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDelete}>Confirm Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
