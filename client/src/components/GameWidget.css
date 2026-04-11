@@ -1,0 +1,413 @@
+/* ══════════════════════════════════════════════════════
+   GameWidget — inline game tracking card
+   ══════════════════════════════════════════════════════ */
+
+.gw-widget {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 24px;
+  transition: border-color 0.2s, opacity 0.2s;
+}
+
+.gw-widget--done {
+  border-color: rgba(0, 212, 170, 0.25);
+  opacity: 0.82;
+}
+
+/* ── Header ────────────────────────────────────────── */
+.gw-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.gw-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.gw-header-right {
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.gw-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-name-input {
+  max-width: 300px;
+  height: 38px;
+}
+
+.gw-type-badge {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.gw-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.gw-remove-btn:hover { color: var(--danger); background: rgba(255,107,107,0.1); }
+
+.gw-done-badge {
+  background: rgba(0, 212, 170, 0.14);
+  color: var(--primary);
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── Config phase ──────────────────────────────────── */
+.gw-config {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Type selector */
+.gw-type-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .gw-type-selector { grid-template-columns: 1fr; }
+}
+
+.gw-type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s;
+}
+
+.gw-type-btn--active {
+  border-color: var(--primary);
+  background: rgba(0, 212, 170, 0.07);
+}
+
+.gw-type-btn:hover:not(.gw-type-btn--active) {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.gw-type-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.gw-type-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Player picker */
+.gw-picker-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.gw-picker-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gw-picker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gw-picker-pill--on {
+  background: rgba(0, 212, 170, 0.1);
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.gw-picker-check {
+  font-size: 11px;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.gw-setup-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Active tracking ───────────────────────────────── */
+.gw-body { display: flex; flex-direction: column; gap: 0; }
+
+.gw-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* Drag & Drop */
+.gw-dnd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.gw-dnd-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.gw-dnd-card:hover {
+  border-color: rgba(0, 212, 170, 0.4);
+}
+
+.gw-dnd-card:active {
+  cursor: grabbing;
+  border-color: var(--primary);
+  box-shadow: 0 4px 20px rgba(0, 212, 170, 0.18);
+  transform: scale(1.01);
+}
+
+.gw-dnd-rank {
+  min-width: 28px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gw-dnd-handle {
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: grab;
+}
+
+.gw-dnd-name {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.gw-guest-tag {
+  background: rgba(0, 180, 216, 0.15);
+  color: var(--secondary);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Score entry */
+.gw-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 16px;
+}
+
+.gw-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.gw-score-row:last-child { border-bottom: none; }
+
+.gw-score-name {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gw-score-input {
+  width: 90px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.gw-score-input:focus { border-color: var(--primary); }
+
+/* Cumulative rounds table */
+.gw-rounds-wrap {
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.gw-rounds-table {
+  width: 100%;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gw-cell {
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.gw-cell--label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gw-cell--head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-rounds-header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.gw-round-row {
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+.gw-round-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.gw-round-input:focus {
+  border-color: var(--primary);
+  background: rgba(0, 212, 170, 0.05);
+}
+
+.gw-totals-row {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+  background: rgba(0, 212, 170, 0.04);
+  border-radius: 6px;
+}
+
+.gw-cell--total { color: var(--text-muted); }
+
+.gw-cell--total-val {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--primary);
+  text-align: center;
+  padding: 8px 10px;
+  display: block;
+}
+
+.gw-add-round-btn {
+  margin-top: 10px;
+}
+
+.gw-done-btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+/* ── Completed summary ─────────────────────────────── */
+.gw-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.gw-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 14px;
+}
+.gw-summary-row:last-child { border-bottom: none; }
+
+.gw-summary-rank { font-size: 20px; min-width: 32px; }
+
+.gw-summary-score {
+  color: var(--primary);
+  font-size: 14px;
+}

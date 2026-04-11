@@ -10,7 +10,7 @@ app.use(express.json());
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/games', require('./routes/games'));
-app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/game-nights', require('./routes/game-nights'));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
