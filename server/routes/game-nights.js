@@ -2,6 +2,74 @@ const router = require("express").Router();
 const pool = require("../db");
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GET /api/game-nights/:nightId/games/:gamePlayedId  — targeted sync for a single game
+// IMPORTANT: Must be registered BEFORE GET /:id or Express will swallow this route.
+// Returns the games_played record joined with participants, results, and round_scores.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get("/:nightId/games/:gamePlayedId", async (req, res) => {
+  const { gamePlayedId } = req.params;
+  try {
+    // Fetch core game record. higher_is_better may not exist yet if the migration
+    // hasn't been run — we fall back gracefully to true in that case.
+    let gpRes;
+    try {
+      gpRes = await pool.query(
+        `SELECT gp.id, gp.game_type, gp.is_complete, gp.higher_is_better, g.name AS game_name
+         FROM games_played gp
+         JOIN games g ON g.id = gp.game_id
+         WHERE gp.id = $1`,
+        [gamePlayedId]
+      );
+    } catch (_colErr) {
+      // Column doesn't exist yet — query without it and default to true
+      gpRes = await pool.query(
+        `SELECT gp.id, gp.game_type, gp.is_complete, TRUE AS higher_is_better, g.name AS game_name
+         FROM games_played gp
+         JOIN games g ON g.id = gp.game_id
+         WHERE gp.id = $1`,
+        [gamePlayedId]
+      );
+    }
+    if (!gpRes.rows[0]) return res.status(404).json({ error: "Game not found" });
+    const gp = gpRes.rows[0];
+
+    const participantsRes = await pool.query(
+      `SELECT gpart.attendee_id,
+              COALESCE(u.username, a.guest_name) AS name,
+              gr.position,
+              a.user_id,
+              a.guest_name
+       FROM game_participants gpart
+       JOIN attendees a ON a.id = gpart.attendee_id
+       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN game_results gr
+         ON gr.games_played_id = gpart.games_played_id
+        AND gr.attendee_id = gpart.attendee_id
+       WHERE gpart.games_played_id = $1`,
+      [gamePlayedId]
+    );
+
+    let rounds = [];
+    if (gp.game_type === "cumulative" || gp.game_type === "scores") {
+      const roundsRes = await pool.query(
+        `SELECT gr.id AS round_id, gr.round_number,
+                rs.attendee_id, rs.score
+         FROM game_rounds gr
+         JOIN round_scores rs ON rs.round_id = gr.id
+         WHERE gr.games_played_id = $1
+         ORDER BY gr.round_number`,
+        [gamePlayedId]
+      );
+      rounds = roundsRes.rows;
+    }
+
+    res.json({ ...gp, participants: participantsRes.rows, rounds });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // GET /api/game-nights/:id  — full night detail (night, attendees, games)
 // ──────────────────────────────────────────────────────────────────────────────
 router.get("/:id", async (req, res) => {
@@ -50,7 +118,7 @@ router.get("/:id", async (req, res) => {
         );
 
         let rounds = [];
-        if (gp.game_type === "cumulative") {
+        if (gp.game_type === "cumulative" || gp.game_type === "scores") {
           const roundsRes = await pool.query(
             `SELECT gr.id AS round_id, gr.round_number,
                     rs.attendee_id, rs.score,
@@ -157,14 +225,14 @@ router.put("/:id/end", async (req, res) => {
 // Body: { game_id, game_type, is_complete?, participants: [{attendee_id, position}] }
 // ──────────────────────────────────────────────────────────────────────────────
 router.post("/:id/games", async (req, res) => {
-  const { game_id, game_type, participants, is_complete = true } = req.body;
+  const { game_id, game_type, participants, is_complete = true, higher_is_better = true } = req.body;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const gamePlayedRes = await client.query(
-      "INSERT INTO games_played (game_night_id, game_id, game_type, is_complete) VALUES ($1, $2, $3, $4) RETURNING id",
-      [req.params.id, game_id, game_type, is_complete]
+      "INSERT INTO games_played (game_night_id, game_id, game_type, is_complete, higher_is_better) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [req.params.id, game_id, game_type, is_complete, higher_is_better]
     );
     const games_played_id = gamePlayedRes.rows[0].id;
 
@@ -299,10 +367,18 @@ router.post("/:id/games/:gamesPlayedId/finalize", async (req, res) => {
       );
     }
 
-    await client.query(
-      "UPDATE games_played SET is_complete = TRUE WHERE id = $1",
-      [gamesPlayedId]
-    );
+    // Persist higher_is_better — column added by migration, falls back silently if missing
+    try {
+      await client.query(
+        "UPDATE games_played SET is_complete = TRUE, higher_is_better = $2 WHERE id = $1",
+        [gamesPlayedId, higher_is_better]
+      );
+    } catch (_colErr) {
+      await client.query(
+        "UPDATE games_played SET is_complete = TRUE WHERE id = $1",
+        [gamesPlayedId]
+      );
+    }
 
     await client.query("COMMIT");
     res.json({ success: true, positions: sorted.map((r, i) => ({ ...r, position: i + 1 })) });

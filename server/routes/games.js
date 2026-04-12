@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
 // Names are normalized to trimmed lowercase so "Catan", " catan ", "CATAN" all resolve to the same entry
 router.post('/', async (req, res) => {
   const { name } = req.body;
-  const normalized = (name || '').trim().toLowerCase();
+  const normalized = (name || '').trim().toLowerCase().replace(/^\w/, c => c.toUpperCase());
   if (!normalized) return res.status(400).json({ error: 'Game name is required' });
 
   try {

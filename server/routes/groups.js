@@ -79,6 +79,26 @@ router.get("/user/:user_id", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// POST /api/groups/join  — join a group by invite code
+// Body: { invite_code, user_id }
+// NOTE: This must be defined BEFORE GET /:id or Express will match "join" as the :id param
+// ──────────────────────────────────────────────────────────────────────────────
+router.post("/join", async (req, res) => {
+  const { invite_code, user_id } = req.body;
+  try {
+    const group = await pool.query("SELECT * FROM groups WHERE invite_code = $1", [invite_code]);
+    if (!group.rows[0]) return res.status(404).json({ error: "Invalid invite code" });
+    await pool.query(
+      "INSERT INTO group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [group.rows[0].id, user_id]
+    );
+    res.json(group.rows[0]);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // GET /api/groups/:id  — single group detail
 // ──────────────────────────────────────────────────────────────────────────────
 router.get("/:id", async (req, res) => {
@@ -123,25 +143,6 @@ router.post("/:group_id/members", async (req, res) => {
       [req.params.group_id, user.rows[0].id]
     );
     res.json({ message: "Member added" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ──────────────────────────────────────────────────────────────────────────────
-// POST /api/groups/join  — join a group by invite code
-// Body: { invite_code, user_id }
-// ──────────────────────────────────────────────────────────────────────────────
-router.post("/join", async (req, res) => {
-  const { invite_code, user_id } = req.body;
-  try {
-    const group = await pool.query("SELECT * FROM groups WHERE invite_code = $1", [invite_code]);
-    if (!group.rows[0]) return res.status(404).json({ error: "Invalid invite code" });
-    await pool.query(
-      "INSERT INTO group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-      [group.rows[0].id, user_id]
-    );
-    res.json(group.rows[0]);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

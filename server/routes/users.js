@@ -2,6 +2,28 @@ const router = require("express").Router();
 const pool = require("../db");
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GET /api/users/search?q=username
+// Used by GameNightCreator to look up a registered user by username.
+// Returns the user object if found, or 404 so the caller can fall back to guest.
+// IMPORTANT: Must be registered BEFORE /:id routes or Express matches "search" as id.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get("/search", async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: "Query required" });
+  try {
+    const result = await pool.query(
+      "SELECT id, username, email FROM users WHERE username ILIKE $1 LIMIT 1",
+      [q]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "User not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ──────────────────────────────────────────────────────────────────────────────
 // GET /api/users/:id/stats
 // Returns: win_rate (%), wins, total_games, points, podium breakdown
 // Points: last=0, ..., winner=(n-1 players)

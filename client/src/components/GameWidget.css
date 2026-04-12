@@ -93,7 +93,7 @@
 /* Type selector */
 .gw-type-selector {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -634,3 +634,54 @@
   background: rgba(255, 107, 107, 0.08);
 }
 
+
+/* ── Inline confirm modal (replaces window.confirm) ── */
+.gw-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 24px;
+}
+
+.gw-confirm-modal {
+  width: 100%;
+  max-width: 400px;
+  padding: 28px;
+  animation: gw-confirm-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes gw-confirm-in {
+  from { transform: translateY(12px) scale(0.97); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+.gw-confirm-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.gw-confirm-msg {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  line-height: 1.55;
+}
+
+.gw-confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ── Score label in expanded results ── */
+.gw-summary-score-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+}

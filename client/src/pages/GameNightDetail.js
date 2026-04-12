@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -13,7 +13,7 @@ export default function GameNightDetail() {
   const [loading,   setLoading]   = useState(true);
   const [widgets,   setWidgets]   = useState([]);
   const [widgetCounter, setWidgetCounter] = useState(1);
-  const [pointsMap, setPointsMap] = useState({});
+
   const [endingNight, setEndingNight] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
@@ -36,25 +36,26 @@ export default function GameNightDetail() {
           attendeeMap[a.id] = a.username || a.guest_name || 'Unknown';
         });
 
-        const pts = {};
-
         const hydratedWidgets = (data.games || []).map(g => {
           const results = (g.participants || [])
             .filter(p => p.position != null)
             .sort((a, b) => a.position - b.position);
 
-          const totalPlayers = results.length;
-
-          results.forEach(p => {
-            const earned = Math.max(0, totalPlayers - p.position);
-            pts[p.attendee_id] = (pts[p.attendee_id] || 0) + earned;
-          });
+          // Compute totals from rounds for cumulative/scores games
+          // rounds rows: { attendee_id, score, round_number, ... }
+          const roundTotals = {};
+          if (g.rounds?.length > 0) {
+            g.rounds.forEach(row => {
+              const aid = row.attendee_id;
+              roundTotals[aid] = (roundTotals[aid] || 0) + Number(row.score || 0);
+            });
+          }
 
           const completedResults = results.map(r => ({
             id:       r.attendee_id,
             name:     attendeeMap[r.attendee_id] || 'Unknown',
             position: r.position,
-            score:    r.score ?? null,
+            score:    roundTotals[r.attendee_id] ?? null,
           }));
 
           return {
@@ -62,7 +63,8 @@ export default function GameNightDetail() {
             gameId:          g.id,
             nightId,
             name:            g.game_name,
-            type:            g.game_type === 'winner_order' ? 'positions' : 'cumulative',
+            type:            g.game_type === 'winner_order' ? 'positions' : g.game_type === 'scores' ? 'scores' : 'cumulative',
+            higherIsBetter:  g.higher_is_better ?? true,
             players:         completedResults.map(r => ({ id: r.id, name: r.name })),
             completedResults,
             completed:       g.is_complete,
@@ -70,7 +72,6 @@ export default function GameNightDetail() {
         });
 
         setWidgets(hydratedWidgets.reverse());
-        setPointsMap(pts);
       } catch {
         toast.error('Failed to load game night');
       } finally {
@@ -111,24 +112,103 @@ export default function GameNightDetail() {
     );
   }, []);
 
-  const handleComplete = useCallback((widgetId, results) => {
-    const totalPlayers = results.length;
+  const handleComplete = useCallback((widgetId, serverData) => {
     setWidgets(prev =>
-      prev.map(w => w.id === widgetId ? { ...w, completed: true, completedResults: results } : w)
+      prev.map(w => {
+        if (w.id === widgetId) {
+          return { 
+            ...w, 
+            // 1. Swap temporary ID for DB ID so 'null' error disappears
+            id: `db-${serverData.id}`, 
+            gameId: serverData.id,
+            // 2. Use the results we passed up
+            results: serverData.results,
+            completed: true 
+          };
+        }
+        return w;
+      })
     );
-    setPointsMap(prev => {
-      const next = { ...prev };
-      results.forEach(r => {
-        const earned = Math.max(0, totalPlayers - r.position);
-        next[r.id] = (next[r.id] || 0) + earned;
-      });
-      return next;
-    });
+
   }, []);
 
   const handleRemove = useCallback((widgetId) => {
     setWidgets(prev => prev.filter(w => w.id !== widgetId));
   }, []);
+
+  // ── Targeted sync: fetch a single game from the DB and update its widget ──
+  // Called by GameWidget after any mutating API call (configure / mark done).
+  // This is the fix for stale IDs and empty edit views without a full reload.
+  const syncWidget = useCallback(async (tempWidgetId, gamePlayedId) => {
+    if (!gamePlayedId) return;
+    try {
+      const { data } = await axios.get(`/api/game-nights/${nightId}/games/${gamePlayedId}`);
+
+      // Re-use existing attendees already in state — no extra fetch needed
+      setWidgets(prev => {
+        return prev.map(w => {
+          if (w.id !== tempWidgetId && w.id !== `db-${gamePlayedId}`) return w;
+
+          const results = (data.participants || [])
+            .filter(p => p.position != null)
+            .sort((a, b) => a.position - b.position);
+
+          const roundTotals = {};
+          if (data.rounds?.length > 0) {
+            data.rounds.forEach(row => {
+              const aid = row.attendee_id;
+              roundTotals[aid] = (roundTotals[aid] || 0) + Number(row.score || 0);
+            });
+          }
+
+          const completedResults = results.map(r => ({
+            id:       r.attendee_id,
+            name:     r.name || 'Unknown',
+            position: r.position,
+            score:    roundTotals[r.attendee_id] ?? null,
+          }));
+
+          return {
+            ...w,
+            id:              `db-${gamePlayedId}`,
+            gameId:          gamePlayedId,
+            name:            data.game_name,
+            type:            data.game_type === 'winner_order' ? 'positions' : data.game_type === 'scores' ? 'scores' : 'cumulative',
+            higherIsBetter:  data.higher_is_better ?? true,
+            players:         (data.participants || []).map(p => ({
+              id:   p.attendee_id,
+              name: p.name || 'Unknown',
+              type: p.user_id ? 'user' : 'guest',
+            })),
+            completedResults: data.is_complete ? completedResults : w.completedResults,
+            completed:        data.is_complete,
+            // Only overwrite rounds from DB if the game is complete — while in progress
+            // the DB rounds are empty and we must keep the widget's local round state.
+            rounds:           data.is_complete ? (data.rounds || []) : w.rounds,
+          };
+        });
+      });
+    } catch {
+      // Sync failure is non-fatal — the widget still works from local state.
+      // The user can refresh if they see stale data.
+      console.warn(`syncWidget failed for gamePlayedId=${gamePlayedId}`);
+    }
+  }, [nightId]);
+
+  // Derive points from completed widgets — automatically stays in sync with
+  // any widget change (complete, delete, reopen) without manual setPointsMap calls.
+  const pointsMap = useMemo(() => {
+    const pts = {};
+    widgets.forEach(w => {
+      if (!w.completed || !w.completedResults?.length) return;
+      const totalPlayers = w.completedResults.length;
+      w.completedResults.forEach(r => {
+        const earned = Math.max(0, totalPlayers - r.position);
+        pts[r.id] = (pts[r.id] || 0) + earned;
+      });
+    });
+    return pts;
+  }, [widgets]);
 
   const leaderboard = [...attendees]
     .map(a => ({ ...a, points: pointsMap[a.id] || 0 }))
@@ -210,12 +290,13 @@ export default function GameNightDetail() {
               <div className="gnd-widgets">
                 {activeWidgets.map(w => (
                   <GameWidget
-                    key={w.id}
+                    key={w.gameId ?? w.id}
                     widget={w}
                     attendees={attendees}
                     onComplete={handleComplete}
                     onRemove={handleRemove}
                     onNameResolved={handleNameResolved}
+                    onSync={syncWidget}
                     readOnly={!isNightActive}
                   />
                 ))}
@@ -229,12 +310,13 @@ export default function GameNightDetail() {
               <div className="gnd-widgets">
                 {doneWidgets.map(w => (
                   <GameWidget
-                    key={w.id}
+                    key={w.gameId ?? w.id}
                     widget={w}
                     attendees={attendees}
                     onComplete={handleComplete}
                     onRemove={handleRemove}
                     onNameResolved={handleNameResolved}
+                    onSync={syncWidget}
                     readOnly={!isNightActive}
                   />
                 ))}
