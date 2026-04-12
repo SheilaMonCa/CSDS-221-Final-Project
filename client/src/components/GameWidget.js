@@ -96,7 +96,44 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
     });
   };
 
-  // ── Configure ─────────────────────────────────────────────────────────────
+  // ── Delete a configured/in-progress game from the DB ─────────────────────
+  const handleDelete = async () => {
+    if (!gameIdRef.current) {
+      // Never saved to DB — just remove from UI
+      onRemove(widget.id);
+      return;
+    }
+    if (!window.confirm(`Delete "${gameName || 'this game'}"? This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      await axios.delete(`/api/game-nights/${widget.nightId}/games/${gameIdRef.current}`);
+      onRemove(widget.id);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete game');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Reopen a completed game so results can be corrected ───────────────────
+  const handleReopen = async () => {
+    if (!window.confirm(`Reopen "${gameName}"? This will clear the recorded results so you can re-enter them.`)) return;
+    setSaving(true);
+    try {
+      await axios.put(`/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/reopen`);
+      // Reset widget back to active-tracking state
+      setCompleted(false);
+      setCompletedResults([]);
+      setRounds(gameType === 'cumulative' || gameType === 'scores' ? [makeEmptyRound(players)] : []);
+      setScores({});
+      setPositionInputs(Object.fromEntries(players.map((p, i) => [p.id, String(i + 1)])));
+      toast.success('Game reopened — re-enter the results');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to reopen game');
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleConfigure = async () => {
     if (!gameName.trim())   { toast.error('Enter a game name'); return; }
     if (!gameType)          { toast.error('Choose a game type'); return; }
@@ -229,6 +266,26 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
             {winner && <span className="gw-completed-winner">🥇 {winner.name}</span>}
           </div>
           <div className="gw-completed-right">
+            {!readOnly && (
+              <>
+                <button
+                  className="gw-action-btn gw-action-btn--edit"
+                  onClick={e => { e.stopPropagation(); handleReopen(); }}
+                  disabled={saving}
+                  title="Edit results"
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  className="gw-action-btn gw-action-btn--delete"
+                  onClick={e => { e.stopPropagation(); handleDelete(); }}
+                  disabled={saving}
+                  title="Delete game"
+                >
+                  🗑
+                </button>
+              </>
+            )}
             <span className="gw-done-badge">✓ Done</span>
             <span className="gw-expand-chevron">{expanded ? '▲' : '▼'}</span>
           </div>
@@ -298,7 +355,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
               </div>
             )}
           </div>
-          <button className="gw-remove-btn" onClick={() => onRemove(widget.id)} title="Discard">✕</button>
+          <button className="gw-remove-btn" onClick={handleDelete} disabled={saving} title="Discard">✕</button>
         </div>
 
         <div className="gw-config">
@@ -388,11 +445,9 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
         </div>
         <button
           className="gw-remove-btn"
-          title="Cancel this game"
-          onClick={() => {
-            if (window.confirm(`Cancel "${gameName}"? The game entry will remain but be incomplete.`))
-              onRemove(widget.id);
-          }}
+          title="Delete this game"
+          onClick={handleDelete}
+          disabled={saving}
         >✕</button>
       </div>
 

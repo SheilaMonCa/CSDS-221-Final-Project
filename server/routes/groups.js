@@ -153,7 +153,7 @@ router.post("/join", async (req, res) => {
 router.get("/:id/game-nights", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT gn.id, gn.name, gn.played_at, gn.created_at,
+      `SELECT gn.id, gn.name, gn.played_at, gn.created_at, gn.is_active,
               COUNT(DISTINCT gp.id) AS game_count
        FROM game_nights gn
        JOIN groups_present grp ON grp.game_night_id = gn.id
@@ -188,7 +188,7 @@ router.get("/:id/leaderboard", async (req, res) => {
            a.user_id,
            gp.id AS games_played_id,
            gr.position,
-           COUNT(*) OVER (PARTITION BY gp.id) AS total_players
+           (SELECT COUNT(*) FROM game_results gr2 WHERE gr2.games_played_id = gp.id) AS total_players
          FROM games_played gp
          JOIN group_nights gn ON gn.night_id = gp.game_night_id
          JOIN game_results gr ON gr.games_played_id = gp.id
@@ -199,7 +199,7 @@ router.get("/:id/leaderboard", async (req, res) => {
          u.id,
          u.username,
          COUNT(*) AS games,
-         SUM(pr.total_players - pr.position) AS points,
+         SUM(GREATEST(0, pr.total_players - pr.position)) AS points,
          SUM(CASE WHEN pr.position = 1 THEN 1 ELSE 0 END) AS wins
        FROM player_results pr
        JOIN users u ON u.id = pr.user_id

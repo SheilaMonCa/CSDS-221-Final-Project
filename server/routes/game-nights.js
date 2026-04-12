@@ -314,4 +314,70 @@ router.post("/:id/games/:gamesPlayedId/finalize", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// DELETE /api/game-nights/:id/games/:gamesPlayedId
+// Fully removes a game and all related data (participants, results, rounds, scores)
+// ──────────────────────────────────────────────────────────────────────────────
+router.delete("/:id/games/:gamesPlayedId", async (req, res) => {
+  const { gamesPlayedId } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Delete round_scores first (FK → game_rounds)
+    await client.query(
+      `DELETE FROM round_scores WHERE round_id IN (
+         SELECT id FROM game_rounds WHERE games_played_id = $1
+       )`,
+      [gamesPlayedId]
+    );
+    // Delete game_rounds
+    await client.query("DELETE FROM game_rounds WHERE games_played_id = $1", [gamesPlayedId]);
+    // Delete results and participants
+    await client.query("DELETE FROM game_results WHERE games_played_id = $1", [gamesPlayedId]);
+    await client.query("DELETE FROM game_participants WHERE games_played_id = $1", [gamesPlayedId]);
+    // Delete the game itself
+    await client.query("DELETE FROM games_played WHERE id = $1", [gamesPlayedId]);
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PUT /api/game-nights/:id/games/:gamesPlayedId/reopen
+// Clears results/rounds and marks game incomplete so scores can be re-entered
+// ──────────────────────────────────────────────────────────────────────────────
+router.put("/:id/games/:gamesPlayedId/reopen", async (req, res) => {
+  const { gamesPlayedId } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Wipe scores and results so they can be re-entered
+    await client.query(
+      `DELETE FROM round_scores WHERE round_id IN (
+         SELECT id FROM game_rounds WHERE games_played_id = $1
+       )`,
+      [gamesPlayedId]
+    );
+    await client.query("DELETE FROM game_rounds WHERE games_played_id = $1", [gamesPlayedId]);
+    await client.query("DELETE FROM game_results WHERE games_played_id = $1", [gamesPlayedId]);
+    await client.query("UPDATE games_played SET is_complete = FALSE WHERE id = $1", [gamesPlayedId]);
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

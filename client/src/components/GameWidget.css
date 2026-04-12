@@ -603,3 +603,34 @@
   color: var(--text);
 }
 
+
+/* Edit / Delete action buttons on completed game cards */
+.gw-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+}
+
+.gw-action-btn--edit {
+  color: var(--text-muted);
+}
+.gw-action-btn--edit:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(0, 212, 170, 0.08);
+}
+
+.gw-action-btn--delete {
+  color: var(--text-muted);
+}
+.gw-action-btn--delete:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(255, 107, 107, 0.08);
+}
+
