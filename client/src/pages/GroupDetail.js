@@ -4,60 +4,108 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import GameNightCreator from '../components/GameNightCreator';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import './GroupDetail.css';
+
+const PLAYER_COLORS = [
+  '#00d4aa', '#00b4d8', '#f97316', '#a855f7',
+  '#ec4899', '#eab308', '#22d3ee', '#f43f5e',
+];
+
+function ChartTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const nightName = payload[0]?.payload?.nightName;
+  const date      = payload[0]?.payload?.date;
+  const sorted    = [...payload]
+    .filter(p => p.value != null)
+    .sort((a, b) => b.value - a.value);
+  return (
+    <div className="gd-chart-tooltip">
+      {nightName && <p className="gd-chart-tooltip-title">{nightName}</p>}
+      <p className="gd-chart-tooltip-date">{date}</p>
+      {sorted.map(p => (
+        <div key={p.dataKey} className="gd-chart-tooltip-row">
+          <span className="gd-chart-tooltip-dot" style={{ background: p.color }} />
+          <span className="gd-chart-tooltip-name">{p.dataKey}</span>
+          <span className="gd-chart-tooltip-pts">{p.value} pts</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function GroupDetail() {
   const { id }   = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [group,       setGroup]       = useState(null);
-  const [members,     setMembers]     = useState([]);
-  const [gameNights,  setGameNights]  = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [loading,     setLoading]     = useState(true);
+  const [group,      setGroup]      = useState(null);
+  const [members,    setMembers]    = useState([]);
+  const [gameNights, setGameNights] = useState([]);
+  const [loading,    setLoading]    = useState(true);
 
-  const [showNightModal,  setShowNightModal]  = useState(false);
-  const [showLeaveModal,  setShowLeaveModal]  = useState(false);
-  const [showAddModal,    setShowAddModal]    = useState(false);
-  const [addUsername,     setAddUsername]     = useState('');
-  const [addingMember,    setAddingMember]    = useState(false);
-  const [leavingGroup,    setLeavingGroup]    = useState(false);
-  const [showInviteCode,  setShowInviteCode]  = useState(false);
+  const [analytics,        setAnalytics]        = useState({ series: [], players: [], games: [] });
+  const [leaderboard,      setLeaderboard]      = useState([]);
+  const [selectedGame,     setSelectedGame]     = useState('');
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
-  const isCreator = group?.created_by === user?.id;
+  const [showNightModal, setShowNightModal] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [showAddModal,   setShowAddModal]   = useState(false);
+  const [addUsername,    setAddUsername]    = useState('');
+  const [addingMember,   setAddingMember]   = useState(false);
+  const [leavingGroup,   setLeavingGroup]   = useState(false);
 
   useEffect(() => {
-    const fetchAll = async () => {
+    const fetchCore = async () => {
       try {
         const [groupRes, membersRes, nightsRes] = await Promise.all([
           axios.get(`/api/groups/${id}`),
           axios.get(`/api/groups/${id}/members`),
           axios.get(`/api/groups/${id}/game-nights`),
         ]);
-
         setGroup(groupRes.data);
         setMembers(membersRes.data || []);
         setGameNights(nightsRes.data || []);
-
-        try {
-          const lbRes = await axios.get(`/api/groups/${id}/leaderboard`);
-          setLeaderboard(lbRes.data || []);
-        } catch {
-          setLeaderboard((membersRes.data || []).map(m => ({ ...m, points: 0, wins: 0, games: 0 })));
-        }
       } catch {
         toast.error('Failed to load group');
       } finally {
         setLoading(false);
       }
     };
-    fetchAll();
+    fetchCore();
   }, [id]);
 
-  // Split nights into active and past
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      setAnalyticsLoading(true);
+      try {
+        const qs = selectedGame ? `?game_id=${selectedGame}` : '';
+        const [analyticsRes, lbRes] = await Promise.all([
+          axios.get(`/api/groups/${id}/analytics${qs}`),
+          axios.get(`/api/groups/${id}/leaderboard${qs}`),
+        ]);
+        setAnalytics(analyticsRes.data);
+        setLeaderboard(lbRes.data || []);
+      } catch {
+        // non-fatal
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    };
+    fetchAnalytics();
+  }, [id, selectedGame]);
+
   const activeNights = gameNights.filter(n => n.is_active !== false);
   const pastNights   = gameNights.filter(n => n.is_active === false);
+
+  const playerColorMap = Object.fromEntries(
+    analytics.players.map((name, i) => [name, PLAYER_COLORS[i % PLAYER_COLORS.length]])
+  );
+  const selectedGameName = analytics.games.find(g => String(g.id) === selectedGame)?.name ?? '';
 
   const handleAddMember = async (e) => {
     e.preventDefault();
@@ -90,10 +138,9 @@ export default function GroupDetail() {
   };
 
   const copyInviteCode = () => {
-    if (group?.invite_code) {
-      navigator.clipboard.writeText(group.invite_code);
-      toast.success('Invite code copied!');
-    }
+    if (!group?.invite_code) return;
+    navigator.clipboard.writeText(group.invite_code);
+    toast.success('Invite code copied!');
   };
 
   const rankIcon = (i) => ['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`;
@@ -115,7 +162,6 @@ export default function GroupDetail() {
   return (
     <div className="page">
 
-      {/* ── Header ── */}
       <header className="gd-header">
         <div>
           <Link to="/groups" className="gd-back-link">← All Groups</Link>
@@ -126,8 +172,8 @@ export default function GroupDetail() {
           </p>
         </div>
         <div className="gd-header-actions">
-          <button className="btn btn-ghost" onClick={() => setShowInviteCode(s => !s)}>
-            🔗 Invite Code
+          <button className="btn btn-ghost gd-invite-btn" onClick={copyInviteCode} title="Click to copy invite code">
+            🔗 <span className="gd-invite-code-inline">{group?.invite_code}</span>
           </button>
           <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
             🎲 New Game Night
@@ -135,47 +181,75 @@ export default function GroupDetail() {
         </div>
       </header>
 
-      {/* ── Invite code banner ── */}
-      {showInviteCode && group?.invite_code && (
-        <div className="gd-invite-banner">
-          <div>
-            <p className="gd-invite-label">Share this code for others to join</p>
-            <p className="gd-invite-code">{group.invite_code}</p>
-          </div>
-          <button className="btn btn-ghost" onClick={copyInviteCode}>Copy</button>
-        </div>
-      )}
-
-      {/* ── Main grid ── */}
       <div className="gd-grid">
-
         <div className="gd-main">
 
-          {/* All-time leaderboard */}
+          {/* Points-over-time chart */}
           <div className="card">
-            <h3 className="gd-card-title">All-Time Leaderboard</h3>
+            <div className="gd-chart-header">
+              <h3 className="gd-card-title" style={{ margin: 0 }}>
+                {selectedGameName ? `${selectedGameName} — Points Over Time` : 'Points Over Time'}
+              </h3>
+              {analytics.games.length > 0 && (
+                <div className="gd-filter-pills">
+                  <button
+                    className={`gd-filter-pill ${selectedGame === '' ? 'gd-filter-pill--active' : ''}`}
+                    onClick={() => setSelectedGame('')}
+                  >
+                    All Games
+                  </button>
+                  {analytics.games.map(g => (
+                    <button
+                      key={g.id}
+                      className={`gd-filter-pill ${selectedGame === String(g.id) ? 'gd-filter-pill--active' : ''}`}
+                      onClick={() => setSelectedGame(String(g.id))}
+                    >
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            {leaderboard.length === 0 ? (
-              <div className="gd-empty-state">
-                <p>No games played yet — start a game night!</p>
-                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
-                  Start First Night
-                </button>
+            {analyticsLoading ? (
+              <div className="gd-chart-loading">
+                <div className="gd-chart-spinner" />
+                <span>Loading analytics…</span>
+              </div>
+            ) : analytics.series.length === 0 ? (
+              <div className="gd-chart-empty">
+                <span>📊</span>
+                <p>Complete a game night to see trends here.</p>
+              </div>
+            ) : analytics.series.length < 2 ? (
+              <div className="gd-chart-empty">
+                <span>📈</span>
+                <p>Play at least 2 game nights to see how rankings evolve.</p>
               </div>
             ) : (
-              leaderboard.map((player, i) => (
-                <div key={player.id} className="gd-lb-row">
-                  <span className="gd-lb-rank">{rankIcon(i)}</span>
-                  <div className="gd-lb-info">
-                    <span className="gd-lb-name">{player.username}</span>
-                    <span className="gd-lb-sub">{player.games ?? 0} game{player.games !== 1 ? 's' : ''}</span>
-                  </div>
-                  <div className="gd-lb-score">
-                    <span className="gd-lb-pts">{player.points ?? 0}</span>
-                    <span className="gd-lb-pts-label">pts</span>
-                  </div>
-                </div>
-              ))
+              <div className="gd-chart-wrap">
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={analytics.series} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="date" stroke="var(--text-muted)" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+                    <YAxis stroke="var(--text-muted)" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} allowDecimals={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '14px' }} />
+                    {analytics.players.map((player, i) => (
+                      <Line
+                        key={player}
+                        type="monotone"
+                        dataKey={player}
+                        stroke={PLAYER_COLORS[i % PLAYER_COLORS.length]}
+                        strokeWidth={2.5}
+                        dot={{ r: 4, strokeWidth: 0, fill: PLAYER_COLORS[i % PLAYER_COLORS.length] }}
+                        activeDot={{ r: 6, strokeWidth: 0 }}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
 
@@ -183,19 +257,13 @@ export default function GroupDetail() {
           {activeNights.length > 0 && (
             <div className="card">
               <div className="gd-card-header">
-                <h3 className="gd-card-title" style={{ margin: 0 }}>
-                  🟢 Active Nights · {activeNights.length}
-                </h3>
+                <h3 className="gd-card-title" style={{ margin: 0 }}>🟢 Active Nights · {activeNights.length}</h3>
                 <button className="btn btn-primary" style={{ fontSize: '13px' }} onClick={() => setShowNightModal(true)}>
                   + New Night
                 </button>
               </div>
               {activeNights.map(night => (
-                <div
-                  key={night.id}
-                  className="gd-night-row"
-                  onClick={() => navigate(`/game-nights/${night.id}`)}
-                >
+                <div key={night.id} className="gd-night-row" onClick={() => navigate(`/game-nights/${night.id}`)}>
                   <div>
                     <div className="gd-night-name">
                       {night.name || 'Game Night'}
@@ -216,8 +284,7 @@ export default function GroupDetail() {
           <div className="card">
             <div className="gd-card-header">
               <h3 className="gd-card-title" style={{ margin: 0 }}>
-                Past Game Nights
-                {pastNights.length > 0 && ` · ${pastNights.length}`}
+                Past Game Nights{pastNights.length > 0 && ` · ${pastNights.length}`}
               </h3>
               {activeNights.length === 0 && (
                 <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setShowNightModal(true)}>
@@ -225,25 +292,16 @@ export default function GroupDetail() {
                 </button>
               )}
             </div>
-
             {pastNights.length === 0 && activeNights.length === 0 ? (
               <div className="gd-empty-state">
                 <p>No game nights yet.</p>
-                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
-                  Start First Night
-                </button>
+                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>Start First Night</button>
               </div>
             ) : pastNights.length === 0 ? (
-              <div className="gd-empty-state">
-                <p>No completed nights yet — end a night to archive it here.</p>
-              </div>
+              <div className="gd-empty-state"><p>No completed nights yet — end a night to archive it here.</p></div>
             ) : (
               pastNights.map(night => (
-                <div
-                  key={night.id}
-                  className="gd-night-row"
-                  onClick={() => navigate(`/game-nights/${night.id}`)}
-                >
+                <div key={night.id} className="gd-night-row" onClick={() => navigate(`/game-nights/${night.id}`)}>
                   <div>
                     <div className="gd-night-name">{night.name || 'Game Night'}</div>
                     <div className="gd-night-meta">
@@ -258,46 +316,61 @@ export default function GroupDetail() {
           </div>
         </div>
 
-        {/* Right: members sidebar */}
+        {/* Sidebar */}
         <aside className="gd-sidebar">
+
+          <div className="card">
+            <h3 className="gd-card-title">
+              {selectedGameName ? `${selectedGameName} Board` : 'All-Time Leaderboard'}
+            </h3>
+            {analyticsLoading ? (
+              <div className="gd-chart-loading" style={{ padding: '24px 0' }}>
+                <div className="gd-chart-spinner" />
+              </div>
+            ) : leaderboard.length === 0 ? (
+              <div className="gd-empty-state" style={{ padding: '16px 0' }}>
+                <p>No results yet — start a game night!</p>
+                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>Start First Night</button>
+              </div>
+            ) : leaderboard.map((player, i) => (
+              <div key={player.id} className="gd-lb-row">
+                <span className="gd-lb-rank">{rankIcon(i)}</span>
+                <div className="gd-lb-info">
+                  <span className="gd-lb-name" style={{ color: playerColorMap[player.username] || 'var(--text)' }}>
+                    {player.username}
+                  </span>
+                  <span className="gd-lb-sub">{player.games ?? 0}G · {player.wins ?? 0}W</span>
+                </div>
+                <div className="gd-lb-score">
+                  <span className="gd-lb-pts">{player.points ?? 0}</span>
+                  <span className="gd-lb-pts-label">pts</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div className="card">
             <div className="gd-card-header">
               <h3 className="gd-card-title" style={{ margin: 0 }}>Members · {members.length}</h3>
-              <button
-                className="btn btn-ghost"
-                style={{ fontSize: '12px', padding: '4px 10px' }}
-                onClick={() => setShowAddModal(true)}
-              >
+              <button className="btn btn-ghost" style={{ fontSize: '12px', padding: '4px 10px' }} onClick={() => setShowAddModal(true)}>
                 + Add
               </button>
             </div>
-
             {members.map(m => (
               <div key={m.id} className="gd-member-row">
-                <span className="gd-member-avatar">
-                  {m.username?.[0]?.toUpperCase() ?? '?'}
-                </span>
+                <span className="gd-member-avatar">{m.username?.[0]?.toUpperCase() ?? '?'}</span>
                 <span className="gd-member-name">{m.username}</span>
                 {m.id === user?.id && <span className="gd-you-badge">You</span>}
-                {m.id === group?.created_by && m.id !== user?.id && (
-                  <span className="gd-owner-badge">Owner</span>
-                )}
+                {m.id === group?.created_by && m.id !== user?.id && <span className="gd-owner-badge">Owner</span>}
               </div>
             ))}
-
             <div className="gd-member-actions">
-              <button
-                className="btn-text-danger"
-                onClick={() => setShowLeaveModal(true)}
-              >
-                Leave group
-              </button>
+              <button className="btn-text-danger" onClick={() => setShowLeaveModal(true)}>Leave group</button>
             </div>
           </div>
+
         </aside>
       </div>
-
-      {/* ── Modals ── */}
 
       {showAddModal && (
         <div className="gd-modal-overlay" onClick={() => setShowAddModal(false)}>
@@ -307,14 +380,7 @@ export default function GroupDetail() {
             <form onSubmit={handleAddMember}>
               <div className="form-group">
                 <label>Username</label>
-                <input
-                  className="input"
-                  placeholder="e.g. gamemaster99"
-                  value={addUsername}
-                  onChange={e => setAddUsername(e.target.value)}
-                  autoFocus
-                  required
-                />
+                <input className="input" placeholder="e.g. gamemaster99" value={addUsername} onChange={e => setAddUsername(e.target.value)} autoFocus required />
               </div>
               <div className="gd-modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setShowAddModal(false)}>Cancel</button>

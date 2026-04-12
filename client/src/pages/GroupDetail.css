@@ -339,3 +339,160 @@
   vertical-align: middle;
 }
 
+
+/* ── Invite code in header ───────────────────────────────────────────────── */
+.gd-invite-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace;
+}
+
+.gd-invite-code-inline {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+/* ── Chart card ──────────────────────────────────────────────────────────── */
+.gd-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.gd-chart-wrap {
+  width: 100%;
+}
+
+.gd-chart-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 0;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.gd-chart-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: gd-spin 0.7s linear infinite;
+}
+
+.gd-chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.gd-chart-empty span {
+  font-size: 36px;
+}
+
+/* ── Game filter pills ───────────────────────────────────────────────────── */
+.gd-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gd-filter-pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.gd-filter-pill--active {
+  border-color: var(--primary);
+  background: rgba(0, 212, 170, 0.1);
+  color: var(--primary);
+}
+
+.gd-filter-pill:hover:not(.gd-filter-pill--active) {
+  border-color: rgba(255,255,255,0.2);
+  color: var(--text);
+}
+
+/* ── Chart tooltip ───────────────────────────────────────────────────────── */
+.gd-chart-tooltip {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  min-width: 160px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+.gd-chart-tooltip-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.gd-chart-tooltip-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gd-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.gd-chart-tooltip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.gd-chart-tooltip-name {
+  flex: 1;
+}
+
+.gd-chart-tooltip-pts {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* ── Sidebar stacks leaderboard above members ────────────────────────────── */
+.gd-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 860px) {
+  .gd-sidebar {
+    position: sticky;
+    top: 24px;
+  }
+}

@@ -176,6 +176,9 @@ router.get("/:id/game-nights", async (req, res) => {
 // Points system: last place = 0 pts, ..., winner = (n-1) pts
 // ──────────────────────────────────────────────────────────────────────────────
 router.get("/:id/leaderboard", async (req, res) => {
+  const { game_id } = req.query;
+  const params = [req.params.id];
+  const gameFilter = game_id ? `AND gp.game_id = $${params.push(parseInt(game_id, 10))}` : '';
   try {
     const result = await pool.query(
       `WITH group_nights AS (
@@ -194,7 +197,7 @@ router.get("/:id/leaderboard", async (req, res) => {
          JOIN group_nights gn ON gn.night_id = gp.game_night_id
          JOIN game_results gr ON gr.games_played_id = gp.id
          JOIN attendees a ON a.id = gr.attendee_id
-         WHERE a.user_id IS NOT NULL AND gp.is_complete = TRUE
+         WHERE a.user_id IS NOT NULL AND gp.is_complete = TRUE ${gameFilter}
        )
        SELECT
          u.id,
@@ -206,11 +209,112 @@ router.get("/:id/leaderboard", async (req, res) => {
        JOIN users u ON u.id = pr.user_id
        GROUP BY u.id, u.username
        ORDER BY points DESC, wins DESC`,
-      [req.params.id]
+      params
     );
     res.json(result.rows);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/groups/:id/analytics  — cumulative points time-series for the chart
+// Returns: { series: [{date, nightName, PlayerA: pts, ...}], players: [], games: [] }
+// Optional ?game_id= to filter to a single board game.
+// Uses SQL window functions for running totals — no frontend math.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get("/:id/analytics", async (req, res) => {
+  const { game_id } = req.query;
+  const params = [req.params.id];
+  const gameFilter = game_id ? `AND gp.game_id = $${params.push(parseInt(game_id, 10))}` : '';
+
+  try {
+    // Games this group has played — used to populate the filter pills
+    const gamesRes = await pool.query(
+      `SELECT DISTINCT g.id, g.name
+       FROM games g
+       JOIN games_played gp ON gp.game_id = g.id
+       JOIN game_nights gn ON gn.id = gp.game_night_id
+       JOIN groups_present grp ON grp.game_night_id = gn.id
+       WHERE grp.group_id = $1 AND gp.is_complete = TRUE
+       ORDER BY g.name`,
+      [req.params.id]
+    );
+
+    // Cumulative points per player per night using a window function
+    const result = await pool.query(
+      `WITH group_nights AS (
+         SELECT gn.id   AS night_id,
+                gn.name AS night_name,
+                COALESCE(gn.played_at, gn.created_at) AS night_date
+         FROM game_nights gn
+         JOIN groups_present grp ON grp.game_night_id = gn.id
+         WHERE grp.group_id = $1
+           AND gn.is_active = FALSE
+         ORDER BY night_date
+       ),
+       night_points AS (
+         SELECT
+           gn.night_id,
+           gn.night_name,
+           gn.night_date,
+           a.user_id,
+           u.username,
+           SUM(GREATEST(0,
+             (SELECT COUNT(*) FROM game_results gr2
+              WHERE gr2.games_played_id = gp.id) - gr.position
+           )) AS points
+         FROM group_nights gn
+         JOIN games_played gp
+           ON gp.game_night_id = gn.night_id AND gp.is_complete = TRUE ${gameFilter}
+         JOIN game_results gr ON gr.games_played_id = gp.id
+         JOIN attendees a ON a.id = gr.attendee_id
+         JOIN users u ON u.id = a.user_id
+         WHERE a.user_id IS NOT NULL
+         GROUP BY gn.night_id, gn.night_name, gn.night_date, a.user_id, u.username
+       ),
+       cumulative AS (
+         SELECT
+           night_id, night_name, night_date, username,
+           SUM(points) OVER (
+             PARTITION BY user_id
+             ORDER BY night_date, night_id
+             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+           ) AS cumulative_points
+         FROM night_points
+       )
+       SELECT night_id, night_name, night_date, username, cumulative_points
+       FROM cumulative
+       ORDER BY night_date, night_id`,
+      params
+    );
+
+    // Pivot flat rows into recharts-friendly [{date, nightName, Alice: 5, Bob: 3}, ...]
+    const nightOrder = [];
+    const nightMap   = new Map();
+    const playerSet  = new Set();
+
+    result.rows.forEach(row => {
+      if (!nightMap.has(row.night_id)) {
+        nightMap.set(row.night_id, {
+          date: new Date(row.night_date).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric',
+          }),
+          nightName: row.night_name,
+        });
+        nightOrder.push(row.night_id);
+      }
+      nightMap.get(row.night_id)[row.username] = Number(row.cumulative_points);
+      playerSet.add(row.username);
+    });
+
+    res.json({
+      series:  nightOrder.map(id => nightMap.get(id)),
+      players: Array.from(playerSet).sort(),
+      games:   gamesRes.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

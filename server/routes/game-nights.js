@@ -92,7 +92,7 @@ router.get("/:id", async (req, res) => {
 
     // Games played with their results/rounds
     const gamesRes = await pool.query(
-      `SELECT gp.id, gp.game_type, gp.is_complete, g.name AS game_name
+      `SELECT gp.id, gp.game_type, gp.is_complete, gp.higher_is_better, g.name AS game_name
        FROM games_played gp
        JOIN games g ON g.id = gp.game_id
        WHERE gp.game_night_id = $1
