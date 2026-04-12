@@ -4,21 +4,29 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import GameNightCreator from '../components/GameNightCreator';
+import './GroupDetail.css';
 
 export default function GroupDetail() {
-  const { id }      = useParams();
-  const { user }    = useAuth();
-  const navigate    = useNavigate();
+  const { id }   = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-  const [group,      setGroup]      = useState(null);
-  const [members,    setMembers]    = useState([]);
-  const [gameNights, setGameNights] = useState([]);
-  const [leaderboard,setLeaderboard]= useState([]);  // [{ id, username, wins, games }]
-  const [loading,    setLoading]    = useState(true);
+  const [group,       setGroup]       = useState(null);
+  const [members,     setMembers]     = useState([]);
+  const [gameNights,  setGameNights]  = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [loading,     setLoading]     = useState(true);
 
-  const [showNightModal, setShowNightModal] = useState(false);
+  const [showNightModal,  setShowNightModal]  = useState(false);
+  const [showLeaveModal,  setShowLeaveModal]  = useState(false);
+  const [showAddModal,    setShowAddModal]    = useState(false);
+  const [addUsername,     setAddUsername]     = useState('');
+  const [addingMember,    setAddingMember]    = useState(false);
+  const [leavingGroup,    setLeavingGroup]    = useState(false);
+  const [showInviteCode,  setShowInviteCode]  = useState(false);
 
-  // ── Fetch all group data ────────────────────────────────────────────────
+  const isCreator = group?.created_by === user?.id;
+
   useEffect(() => {
     const fetchAll = async () => {
       try {
@@ -30,16 +38,14 @@ export default function GroupDetail() {
 
         setGroup(groupRes.data);
         setMembers(membersRes.data || []);
-        setGameNights((nightsRes.data || []).slice(0, 5));  // most recent 5
+        setGameNights(nightsRes.data || []);
 
-        // Try to fetch leaderboard; gracefully fall back to members list
         try {
           const lbRes = await axios.get(`/api/groups/${id}/leaderboard`);
           setLeaderboard(lbRes.data || []);
         } catch {
-          setLeaderboard(
-            (membersRes.data || []).map(m => ({ ...m, wins: 0, games: 0 }))
-          );
+          // Graceful fallback: show all members with 0 pts if no games yet
+          setLeaderboard((membersRes.data || []).map(m => ({ ...m, points: 0, wins: 0, games: 0 })));
         }
       } catch {
         toast.error('Failed to load group');
@@ -50,13 +56,51 @@ export default function GroupDetail() {
     fetchAll();
   }, [id]);
 
+  const handleAddMember = async (e) => {
+    e.preventDefault();
+    if (!addUsername.trim()) return;
+    setAddingMember(true);
+    try {
+      await axios.post(`/api/groups/${id}/members`, { username: addUsername.trim() });
+      toast.success(`${addUsername} added to group!`);
+      setAddUsername('');
+      setShowAddModal(false);
+      // Refresh members
+      const res = await axios.get(`/api/groups/${id}/members`);
+      setMembers(res.data || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to add member');
+    } finally {
+      setAddingMember(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    setLeavingGroup(true);
+    try {
+      await axios.delete(`/api/groups/${id}/members/${user.id}`);
+      toast.success('You left the group.');
+      navigate('/groups');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to leave group');
+      setLeavingGroup(false);
+    }
+  };
+
+  const copyInviteCode = () => {
+    if (group?.invite_code) {
+      navigator.clipboard.writeText(group.invite_code);
+      toast.success('Invite code copied!');
+    }
+  };
+
   const rankIcon = (i) => ['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`;
 
-  // ── Render ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="page" style={{ textAlign: 'center', paddingTop: '80px', color: 'var(--text-muted)' }}>
-        Loading group…
+      <div className="page gd-loading">
+        <div className="gd-spinner" />
+        <p>Loading group…</p>
       </div>
     );
   }
@@ -64,66 +108,65 @@ export default function GroupDetail() {
   return (
     <div className="page">
 
-      {/* Header */}
-      <header style={{ marginBottom: '36px', paddingBottom: '24px', borderBottom: '1px solid var(--border)' }}>
-        <Link
-          to="/groups"
-          style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'inline-block', marginBottom: '8px' }}
-        >
-          ← All Groups
-        </Link>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <div>
-            <h1 style={{ fontSize: '28px', fontWeight: 800, letterSpacing: '-0.03em', margin: 0 }}>
-              {group?.name ?? 'Group'}
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-              {members.length} member{members.length !== 1 ? 's' : ''}
-              {group?.created_at && ` · Created ${new Date(group.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`}
-            </p>
-          </div>
+      {/* ── Header ── */}
+      <header className="gd-header">
+        <div>
+          <Link to="/groups" className="gd-back-link">← All Groups</Link>
+          <h1 className="gd-title">{group?.name ?? 'Group'}</h1>
+          <p className="gd-meta">
+            {members.length} member{members.length !== 1 ? 's' : ''}
+            {group?.created_at && ` · Created ${new Date(group.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`}
+          </p>
+        </div>
+        <div className="gd-header-actions">
+          <button className="btn btn-ghost" onClick={() => setShowInviteCode(s => !s)}>
+            🔗 Invite Code
+          </button>
           <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
             🎲 New Game Night
           </button>
         </div>
       </header>
 
-      {/* Two-column layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '28px', alignItems: 'start' }}>
+      {/* ── Invite code banner ── */}
+      {showInviteCode && group?.invite_code && (
+        <div className="gd-invite-banner">
+          <div>
+            <p className="gd-invite-label">Share this code for others to join</p>
+            <p className="gd-invite-code">{group.invite_code}</p>
+          </div>
+          <button className="btn btn-ghost" onClick={copyInviteCode}>Copy</button>
+        </div>
+      )}
 
-        {/* Left: Leaderboard + Recent Nights */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* ── Main grid ── */}
+      <div className="gd-grid">
+
+        {/* Left: leaderboard + recent nights */}
+        <div className="gd-main">
 
           {/* All-time leaderboard */}
           <div className="card">
-            <h3 style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-              All-Time Leaderboard
-            </h3>
+            <h3 className="gd-card-title">All-Time Leaderboard</h3>
+
             {leaderboard.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-                No games played yet — start a game night!
-              </p>
+              <div className="gd-empty-state">
+                <p>No games played yet — start a game night!</p>
+                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
+                  Start First Night
+                </button>
+              </div>
             ) : (
               leaderboard.map((player, i) => (
-                <div
-                  key={player.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 0',
-                    borderBottom: i < leaderboard.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: '22px', minWidth: '32px' }}>{rankIcon(i)}</span>
-                  <span style={{ flex: 1, fontWeight: 600, fontSize: '14px' }}>{player.username}</span>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '16px' }}>
-                      {player.wins ?? 0}W
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {player.games ?? 0} games
-                    </div>
+                <div key={player.id} className="gd-lb-row">
+                  <span className="gd-lb-rank">{rankIcon(i)}</span>
+                  <div className="gd-lb-info">
+                    <span className="gd-lb-name">{player.username}</span>
+                    <span className="gd-lb-sub">{player.games ?? 0} game{player.games !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="gd-lb-score">
+                    <span className="gd-lb-pts">{player.points ?? 0}</span>
+                    <span className="gd-lb-pts-label">pts</span>
                   </div>
                 </div>
               ))
@@ -132,91 +175,129 @@ export default function GroupDetail() {
 
           {/* Recent game nights */}
           <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-              <h3 style={{ margin: 0 }}>Recent Game Nights</h3>
+            <div className="gd-card-header">
+              <h3 className="gd-card-title" style={{ margin: 0 }}>Recent Game Nights</h3>
+              <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setShowNightModal(true)}>
+                + New Night
+              </button>
             </div>
+
             {gameNights.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '16px' }}>
-                  No game nights yet.
-                </p>
-                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
-                  Start First Night
-                </button>
+              <div className="gd-empty-state">
+                <p>No game nights yet.</p>
               </div>
             ) : (
               gameNights.map((night, i) => (
                 <div
                   key={night.id}
+                  className="gd-night-row"
                   onClick={() => navigate(`/game-nights/${night.id}`)}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '14px 0',
-                    borderBottom: i < gameNights.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                    cursor: 'pointer',
-                  }}
                 >
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '14px' }}>{night.name}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    <div className="gd-night-name">{night.name || 'Game Night'}</div>
+                    <div className="gd-night-meta">
                       {new Date(night.played_at || night.created_at).toLocaleDateString('en-US', {
                         weekday: 'short', month: 'short', day: 'numeric',
                       })}
-                      {night.game_count != null && ` · ${night.game_count} game${night.game_count !== 1 ? 's' : ''}`}
+                      {night.game_count > 0 && ` · ${night.game_count} game${night.game_count !== 1 ? 's' : ''}`}
                     </div>
                   </div>
-                  <span style={{ color: 'var(--primary)', fontSize: '18px' }}>→</span>
+                  <span className="gd-night-arrow">→</span>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        {/* Right: Members sidebar */}
-        <aside style={{ position: 'sticky', top: '24px' }}>
+        {/* Right: members sidebar */}
+        <aside className="gd-sidebar">
           <div className="card">
-            <h3 style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-              Members · {members.length}
-            </h3>
-            {members.map(m => (
-              <div
-                key={m.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '9px 0',
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
-                  fontSize: '14px',
-                }}
+            <div className="gd-card-header">
+              <h3 className="gd-card-title" style={{ margin: 0 }}>Members · {members.length}</h3>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: '12px', padding: '4px 10px' }}
+                onClick={() => setShowAddModal(true)}
               >
-                <span style={{
-                  width: '32px', height: '32px',
-                  borderRadius: '50%',
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '13px', fontWeight: 700, color: 'var(--primary)',
-                  flexShrink: 0,
-                }}>
+                + Add
+              </button>
+            </div>
+
+            {members.map(m => (
+              <div key={m.id} className="gd-member-row">
+                <span className="gd-member-avatar">
                   {m.username?.[0]?.toUpperCase() ?? '?'}
                 </span>
-                <span style={{ flex: 1, fontWeight: 500 }}>{m.username}</span>
-                {m.id === user?.id && (
-                  <span style={{
-                    fontSize: '10px', fontWeight: 700, color: 'var(--primary)',
-                    background: 'rgba(0,212,170,0.12)', padding: '2px 8px', borderRadius: '4px',
-                  }}>You</span>
+                <span className="gd-member-name">{m.username}</span>
+                {m.id === user?.id && <span className="gd-you-badge">You</span>}
+                {m.id === group?.created_by && m.id !== user?.id && (
+                  <span className="gd-owner-badge">Owner</span>
                 )}
               </div>
             ))}
+
+            <div className="gd-member-actions">
+              <button
+                className="btn-text-danger"
+                onClick={() => setShowLeaveModal(true)}
+              >
+                Leave group
+              </button>
+            </div>
           </div>
         </aside>
       </div>
 
-      {/* Game Night Creator modal — prefill this group */}
+      {/* ── Modals ── */}
+
+      {/* Add member */}
+      {showAddModal && (
+        <div className="gd-modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="gd-modal card" onClick={e => e.stopPropagation()}>
+            <h3>Add Member</h3>
+            <p className="gd-modal-sub">Enter their exact username to add them to the group.</p>
+            <form onSubmit={handleAddMember}>
+              <div className="form-group">
+                <label>Username</label>
+                <input
+                  className="input"
+                  placeholder="e.g. gamemaster99"
+                  value={addUsername}
+                  onChange={e => setAddUsername(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="gd-modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setShowAddModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={addingMember}>
+                  {addingMember ? 'Adding…' : 'Add Member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Leave confirmation */}
+      {showLeaveModal && (
+        <div className="gd-modal-overlay" onClick={() => setShowLeaveModal(false)}>
+          <div className="gd-modal card" onClick={e => e.stopPropagation()}>
+            <h3>Leave "{group?.name}"?</h3>
+            <p className="gd-modal-sub">
+              You'll lose access to this group's stats and game nights. You can rejoin with the invite code.
+            </p>
+            <div className="gd-modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowLeaveModal(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleLeaveGroup} disabled={leavingGroup}>
+                {leavingGroup ? 'Leaving…' : 'Yes, Leave Group'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game night creator */}
       <GameNightCreator
         isOpen={showNightModal}
         onClose={() => setShowNightModal(false)}

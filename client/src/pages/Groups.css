@@ -1,12 +1,12 @@
 .groups-header-section {
-  display: flex; 
-  justify-content: space-between; 
-  align-items: flex-start; 
-  marginBottom: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 40px;
 }
 
 .welcome-text {
-  font-size: 32px; 
+  font-size: 32px;
   margin-bottom: 6px;
 }
 
@@ -39,32 +39,32 @@
 }
 
 .bg-emoji-decoration {
-  position: absolute; 
-  top: -10px; 
+  position: absolute;
+  top: -10px;
   right: -4px;
-  font-size: 80px; 
-  opacity: 0.06; 
+  font-size: 80px;
+  opacity: 0.06;
   user-select: none;
 }
 
 .card-emoji {
-  font-size: 32px; 
+  font-size: 32px;
   margin-bottom: 14px;
 }
 
 .card-title {
-  font-size: 18px; 
+  font-size: 18px;
   margin-bottom: 6px;
 }
 
 .card-date {
-  color: var(--text-muted); 
+  color: var(--text-muted);
   font-size: 13px;
 }
 
 .card-footer {
-  marginTop: 20px;
-  paddingTop: 16px;
+  margin-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -74,49 +74,49 @@
 }
 
 .card-footer .arrow {
-  color: var(--primary); 
+  color: var(--primary);
   font-size: 18px;
 }
 
 /* Empty State */
 .empty-state {
-  text-align: center; 
+  text-align: center;
   padding: 80px 24px;
 }
 
 .empty-icon {
-  font-size: 64px; 
+  font-size: 64px;
   margin-bottom: 20px;
 }
 
 .empty-state p {
-  color: var(--text-muted); 
-  margin-bottom: 28px; 
-  max-width: 360px; 
+  color: var(--text-muted);
+  margin-bottom: 28px;
+  max-width: 360px;
   margin: 0 auto 28px;
 }
 
 /* Modal */
 .modal-backdrop {
-  position: fixed; 
+  position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
-  display: flex; 
-  align-items: center; 
+  display: flex;
+  align-items: center;
   justify-content: center;
-  z-index: 200; 
+  z-index: 200;
   padding: 24px;
 }
 
 .modal-card {
-  width: 100%; 
+  width: 100%;
   max-width: 440px;
 }
 
 .modal-footer {
-  display: flex; 
-  gap: 10px; 
-  justify-content: flex-end; 
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
   margin-top: 8px;
 }

@@ -9,8 +9,9 @@ import './Dashboard.css';
 export default function Dashboard() {
   const { user, logout } = useAuth();
 
-  const [stats,   setStats]   = useState({ winRate: '—', total: 0, wins: 0 });
-  const [history, setHistory] = useState([]);
+  const [stats,      setStats]      = useState({ winRate: '—', total: 0, wins: 0, second_place: 0, third_place: 0, no_podium: 0 });
+  const [byGame,     setByGame]     = useState([]);
+  const [history,    setHistory]    = useState([]);
 
   // Modals
   const [showNightModal,  setShowNightModal]  = useState(false);
@@ -37,11 +38,21 @@ export default function Dashboard() {
       try {
         const { data } = await axios.get(`/api/users/${user.id}/stats`);
         setStats({
-          winRate: data.win_rate ?? '—',
-          total:   data.total_games ?? 0,
-          wins:    data.wins ?? 0,
+          winRate:      data.win_rate      ?? '—',
+          total:        data.total_games   ?? 0,
+          wins:         data.wins          ?? 0,
+          second_place: data.second_place  ?? 0,
+          third_place:  data.third_place   ?? 0,
+          no_podium:    data.no_podium     ?? 0,
         });
       } catch { /* Stats not critical */ }
+    };
+
+    const fetchByGame = async () => {
+      try {
+        const { data } = await axios.get(`/api/users/${user.id}/stats/by-game`);
+        setByGame(data || []);
+      } catch { /* Not critical */ }
     };
 
     const fetchHistory = async () => {
@@ -52,6 +63,7 @@ export default function Dashboard() {
     };
 
     fetchStats();
+    fetchByGame();
     fetchHistory();
   }, [user.id]);
 
@@ -109,6 +121,46 @@ export default function Dashboard() {
     });
   };
 
+  // ── Pie chart: podium breakdown ─────────────────────────────────────────
+  const pieData = [
+    { label: '1st', value: stats.wins,         color: '#00d4aa' },
+    { label: '2nd', value: stats.second_place,  color: '#00b4d8' },
+    { label: '3rd', value: stats.third_place,   color: '#7b61ff' },
+    { label: 'No podium', value: stats.no_podium, color: '#3a3a4a' },
+  ].filter(d => d.value > 0);
+
+  const total = pieData.reduce((s, d) => s + d.value, 0);
+
+  // Build SVG pie arcs
+  const buildPie = () => {
+    if (total === 0) return null;
+    let cumulative = 0;
+    const cx = 60, cy = 60, r = 50;
+    return pieData.map((slice, i) => {
+      const pct  = slice.value / total;
+      const startAngle = cumulative * 2 * Math.PI - Math.PI / 2;
+      cumulative += pct;
+      const endAngle = cumulative * 2 * Math.PI - Math.PI / 2;
+      const x1 = cx + r * Math.cos(startAngle);
+      const y1 = cy + r * Math.sin(startAngle);
+      const x2 = cx + r * Math.cos(endAngle);
+      const y2 = cy + r * Math.sin(endAngle);
+      const large = pct > 0.5 ? 1 : 0;
+      return (
+        <path
+          key={i}
+          d={`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z`}
+          fill={slice.color}
+          stroke="var(--bg)"
+          strokeWidth="2"
+        />
+      );
+    });
+  };
+
+  // Bar chart max
+  const maxWinRate = byGame.length > 0 ? Math.max(...byGame.map(g => Number(g.win_rate))) : 100;
+
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="page dashboard-container">
@@ -120,7 +172,6 @@ export default function Dashboard() {
           <p className="sub-text">Welcome back to your dashboard.</p>
         </div>
         <div className="header-actions">
-          {/* PRIMARY action: start a game night */}
           <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
             🎲 New Game Night
           </button>
@@ -136,42 +187,100 @@ export default function Dashboard() {
       {/* Dashboard grid */}
       <div className="dashboard-grid">
 
-        {/* Recent game history */}
-        <section className="card">
-          <h3>Recent Game History</h3>
-          <div className="history-list">
-            {history.length > 0
-              ? history.map((game, i) => (
-                <div key={i} className="history-item">
-                  <div className="game-info">
-                    <div className="game-name">{game.game_name}</div>
-                    <div className="game-meta">
-                      {new Date(game.played_at).toLocaleDateString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
-                      })}
-                      {game.group_name && ` · ${game.group_name}`}
+        {/* Left column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+          {/* Podium pie chart */}
+          <section className="card">
+            <h3>Placement Breakdown</h3>
+            {total === 0 ? (
+              <p className="sub-text" style={{ marginTop: '12px' }}>No completed games yet.</p>
+            ) : (
+              <div style={{ display: 'flex', gap: '24px', alignItems: 'center', marginTop: '16px' }}>
+                <svg width="120" height="120" viewBox="0 0 120 120">
+                  {buildPie()}
+                </svg>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {pieData.map(d => (
+                    <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                      <span style={{ width: 12, height: 12, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)' }}>{d.label}</span>
+                      <span style={{ fontWeight: 700, marginLeft: 'auto', paddingLeft: '12px' }}>
+                        {d.value} ({Math.round(d.value / total * 100)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Win rate by game */}
+          {byGame.length > 0 && (
+            <section className="card">
+              <h3>Win Rate by Game</h3>
+              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {byGame.map(g => (
+                  <div key={g.game_name}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 600 }}>{g.game_name}</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{g.win_rate}%</span>
+                    </div>
+                    <div style={{ background: 'var(--surface)', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${(Number(g.win_rate) / maxWinRate) * 100}%`,
+                        height: '100%',
+                        background: 'var(--primary)',
+                        borderRadius: '4px',
+                        transition: 'width 0.4s ease',
+                      }} />
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {g.wins}W / {g.total_games} games
                     </div>
                   </div>
-                  <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
-                    {game.is_win ? '🏆 WIN' : game.position ? `#${game.position}` : 'Played'}
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Recent game history */}
+          <section className="card">
+            <h3>Recent Game History</h3>
+            <div className="history-list">
+              {history.length > 0
+                ? history.map((game, i) => (
+                  <div key={i} className="history-item">
+                    <div className="game-info">
+                      <div className="game-name">{game.game_name}</div>
+                      <div className="game-meta">
+                        {new Date(game.played_at).toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })}
+                        {game.night_name && ` · ${game.night_name}`}
+                      </div>
+                    </div>
+                    <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
+                      {game.is_win ? '🏆 WIN' : game.position ? `#${game.position}` : 'Played'}
+                    </div>
                   </div>
-                </div>
-              ))
-              : (
-                <div style={{ padding: '32px 0', textAlign: 'center' }}>
-                  <p className="sub-text">No games recorded yet.</p>
-                  <button
-                    className="btn btn-primary"
-                    style={{ marginTop: '16px' }}
-                    onClick={() => setShowNightModal(true)}
-                  >
-                    Start your first game night
-                  </button>
-                </div>
-              )
-            }
-          </div>
-        </section>
+                ))
+                : (
+                  <div style={{ padding: '32px 0', textAlign: 'center' }}>
+                    <p className="sub-text">No games recorded yet.</p>
+                    <button
+                      className="btn btn-primary"
+                      style={{ marginTop: '16px' }}
+                      onClick={() => setShowNightModal(true)}
+                    >
+                      Start your first game night
+                    </button>
+                  </div>
+                )
+              }
+            </div>
+          </section>
+        </div>
 
         {/* Stats sidebar */}
         <section className="stats-sidebar">
@@ -180,7 +289,7 @@ export default function Dashboard() {
             <div style={{ marginTop: '12px' }}>
               <div className="stat-row">
                 <span>Win Rate</span>
-                <strong>{stats.winRate}</strong>
+                <strong>{stats.winRate}{stats.winRate !== '—' ? '%' : ''}</strong>
               </div>
               <div className="stat-row">
                 <span>Total Wins</span>
@@ -189,6 +298,18 @@ export default function Dashboard() {
               <div className="stat-row">
                 <span>Total Games</span>
                 <strong>{stats.total}</strong>
+              </div>
+              <div className="stat-row">
+                <span>🥇 1st place</span>
+                <strong>{stats.wins}</strong>
+              </div>
+              <div className="stat-row">
+                <span>🥈 2nd place</span>
+                <strong>{stats.second_place}</strong>
+              </div>
+              <div className="stat-row">
+                <span>🥉 3rd place</span>
+                <strong>{stats.third_place}</strong>
               </div>
             </div>
           </div>

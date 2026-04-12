@@ -411,3 +411,66 @@
   color: var(--primary);
   font-size: 14px;
 }
+
+/* ── Completed card (collapsed + expandable) ───────────────────────── */
+.gw-completed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  gap: 12px;
+}
+.gw-completed-header:focus-visible {
+  outline: 2px solid var(--primary);
+  border-radius: 6px;
+}
+.gw-completed-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.gw-completed-name {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gw-completed-winner {
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gw-completed-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.gw-expand-chevron {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.gw-expanded-results {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.gw-summary-rank { font-size: 18px; min-width: 32px; }
+.gw-summary-name { flex: 1; font-size: 14px; font-weight: 500; }
+.gw-summary-score { color: var(--primary); font-weight: 700; font-size: 13px; }
+
+/* ── DnD: prevent child spans from intercepting drag events ── */
+.gw-dnd-card * {
+  pointer-events: none;
+}
+.gw-dnd-card--dragging {
+  opacity: 0.4;
+}
