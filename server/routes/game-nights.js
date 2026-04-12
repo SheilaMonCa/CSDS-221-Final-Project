@@ -137,6 +137,22 @@ router.post("/", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// PUT /api/game-nights/:id/end  — mark a game night as ended (view-only)
+// ──────────────────────────────────────────────────────────────────────────────
+router.put("/:id/end", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "UPDATE game_nights SET is_active = FALSE WHERE id = $1 RETURNING *",
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Not found" });
+    res.json({ success: true, night: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // POST /api/game-nights/:id/games  — create a game shell + participants
 // Body: { game_id, game_type, is_complete?, participants: [{attendee_id, position}] }
 // ──────────────────────────────────────────────────────────────────────────────
@@ -157,7 +173,6 @@ router.post("/:id/games", async (req, res) => {
         "INSERT INTO game_participants (games_played_id, attendee_id) VALUES ($1, $2)",
         [games_played_id, p.attendee_id]
       );
-      // Only write results if we have a meaningful position and game is complete
       if (is_complete && p.position != null) {
         await client.query(
           "INSERT INTO game_results (games_played_id, attendee_id, position) VALUES ($1, $2, $3)",
@@ -178,8 +193,6 @@ router.post("/:id/games", async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PUT /api/game-nights/:id/games/:gamesPlayedId/positions
-// Update final positions for a winner_order game and mark complete
-// Body: { participants: [{attendee_id, position}] }
 // ──────────────────────────────────────────────────────────────────────────────
 router.put("/:id/games/:gamesPlayedId/positions", async (req, res) => {
   const { gamesPlayedId } = req.params;
@@ -213,8 +226,7 @@ router.put("/:id/games/:gamesPlayedId/positions", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// POST /api/game-nights/:id/games/:gamesPlayedId/rounds  — log one round of scores
-// Body: { scores: [{attendee_id, score}] }
+// POST /api/game-nights/:id/games/:gamesPlayedId/rounds
 // ──────────────────────────────────────────────────────────────────────────────
 router.post("/:id/games/:gamesPlayedId/rounds", async (req, res) => {
   const { gamesPlayedId } = req.params;
@@ -223,7 +235,6 @@ router.post("/:id/games/:gamesPlayedId/rounds", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Find next round number
     const countRes = await client.query(
       "SELECT COUNT(*) FROM game_rounds WHERE games_played_id = $1",
       [gamesPlayedId]
@@ -255,7 +266,6 @@ router.post("/:id/games/:gamesPlayedId/rounds", async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST /api/game-nights/:id/games/:gamesPlayedId/finalize
-// Converts cumulative round totals → positions and marks game complete
 // Body: { higher_is_better: bool }
 // ──────────────────────────────────────────────────────────────────────────────
 router.post("/:id/games/:gamesPlayedId/finalize", async (req, res) => {
@@ -265,7 +275,6 @@ router.post("/:id/games/:gamesPlayedId/finalize", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Tally total scores per attendee
     const totalsRes = await client.query(
       `SELECT rs.attendee_id, SUM(rs.score) AS total
        FROM round_scores rs
@@ -275,7 +284,6 @@ router.post("/:id/games/:gamesPlayedId/finalize", async (req, res) => {
       [gamesPlayedId]
     );
 
-    // Sort into positions
     const sorted = totalsRes.rows.sort((a, b) =>
       higher_is_better
         ? Number(b.total) - Number(a.total)

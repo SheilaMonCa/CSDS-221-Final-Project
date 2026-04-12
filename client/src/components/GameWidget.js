@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './GameWidget.css';
 
-export default function GameWidget({ widget, attendees, onComplete, onRemove, onNameResolved }) {
+export default function GameWidget({ widget, attendees, onComplete, onRemove, onNameResolved, readOnly = false }) {
   const [gameName,   setGameName]   = useState(widget.name || '');
   const [gameType,   setGameType]   = useState(widget.type || null);
   const [players,    setPlayers]    = useState(widget.players?.length ? widget.players : []);
@@ -13,48 +13,56 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
   const [expanded,   setExpanded]   = useState(false);
   const [completedResults, setCompletedResults] = useState(widget.completedResults || []);
 
+  // Higher or lower wins (for scores + cumulative)
+  const [higherIsBetter, setHigherIsBetter] = useState(true);
+
   const gameIdRef = useRef(widget.gameId || null);
 
-  // ── Drag and drop ─────────────────────────────────────────────────────
-  const [orderedPlayers, setOrderedPlayers] = useState(widget.players?.length ? widget.players : []);
-  const dragSrcIdx = useRef(null);
-  const dragNodeEl = useRef(null);
+  // ── Autocomplete ──────────────────────────────────────────────────────────
+  const [allGames, setAllGames]           = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const nameInputRef = useRef(null);
 
-  const handleDragStart = (e, i) => {
-    dragSrcIdx.current = i;
-    dragNodeEl.current = e.currentTarget;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(i));
-    setTimeout(() => dragNodeEl.current?.classList.add('gw-dnd-card--dragging'), 0);
-  };
+  useEffect(() => {
+    axios.get('/api/games').then(r => setAllGames(r.data || [])).catch(() => {});
+  }, []);
 
-  const handleDragEnter = (e, i) => {
-    e.preventDefault();
-    if (dragSrcIdx.current === null || dragSrcIdx.current === i) return;
-    setOrderedPlayers(prev => {
-      const arr  = [...prev];
-      const item = arr.splice(dragSrcIdx.current, 1)[0];
-      arr.splice(i, 0, item);
-      dragSrcIdx.current = i;
-      return arr;
+  const suggestions = allGames
+    .filter(g =>
+      gameName.trim().length > 0 &&
+      g.name.toLowerCase().includes(gameName.trim().toLowerCase()) &&
+      g.name.toLowerCase() !== gameName.trim().toLowerCase()
+    )
+    .slice(0, 6);
+
+  // ── Positions (replaces DnD) ──────────────────────────────────────────────
+  // { [playerId]: string } — the position number each player typed
+  const [positionInputs, setPositionInputs] = useState({});
+
+  // Initialise position inputs whenever players list changes
+  useEffect(() => {
+    setPositionInputs(prev => {
+      const next = {};
+      players.forEach((p, i) => {
+        next[p.id] = prev[p.id] ?? String(i + 1);
+      });
+      return next;
     });
+  }, [players]);
+
+  const validatePositions = () => {
+    const n = players.length;
+    const vals = players.map(p => parseInt(positionInputs[p.id], 10));
+    if (vals.some(isNaN)) return 'Every player needs a position number';
+    if (vals.some(v => v < 1 || v > n)) return `Positions must be between 1 and ${n}`;
+    if (new Set(vals).size !== n) return 'Each position must be unique — no ties or duplicates';
+    return null;
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDragEnd = () => {
-    dragNodeEl.current?.classList.remove('gw-dnd-card--dragging');
-    dragSrcIdx.current = null;
-    dragNodeEl.current = null;
-  };
-
-  // ── Scores ────────────────────────────────────────────────────────────
+  // ── Scores ────────────────────────────────────────────────────────────────
   const [scores, setScores] = useState({});
 
-  // ── Cumulative rounds ─────────────────────────────────────────────────
+  // ── Cumulative rounds ─────────────────────────────────────────────────────
   const [rounds, setRounds] = useState([]);
 
   const makeEmptyRound = (pList) => {
@@ -75,24 +83,20 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
     return t;
   };
 
-  // ── Player toggling ───────────────────────────────────────────────────
+  // ── Player toggling ───────────────────────────────────────────────────────
   const togglePlayer = (attendee) => {
     setPlayers(prev => {
       const exists = prev.find(p => p.id === attendee.id);
       if (exists) {
         const next = prev.filter(p => p.id !== attendee.id);
-        setOrderedPlayers(next);
         setScores(s => { const n = { ...s }; delete n[attendee.id]; return n; });
         return next;
       }
-      const next = [...prev, attendee];
-      setOrderedPlayers(next);
-      setScores(s => ({ ...s, [attendee.id]: '' }));
-      return next;
+      return [...prev, attendee];
     });
   };
 
-  // ── Configure ─────────────────────────────────────────────────────────
+  // ── Configure ─────────────────────────────────────────────────────────────
   const handleConfigure = async () => {
     if (!gameName.trim())   { toast.error('Enter a game name'); return; }
     if (!gameType)          { toast.error('Choose a game type'); return; }
@@ -112,10 +116,11 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
       });
 
       gameIdRef.current = data.games_played_id;
-      // Tell parent the resolved name so widget label updates without reload
       onNameResolved?.(widget.id, gameName.trim());
       setConfigured(true);
-      if (gameType === 'cumulative') setRounds([makeEmptyRound(players)]);
+      if (gameType === 'cumulative' || gameType === 'scores') {
+        setRounds([makeEmptyRound(players)]);
+      }
       toast.success(`${gameName} is live! 🎯`);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create game');
@@ -124,57 +129,74 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
     }
   };
 
-  // ── Mark done ─────────────────────────────────────────────────────────
+  // ── Mark done ─────────────────────────────────────────────────────────────
   const handleMarkDone = async () => {
     setSaving(true);
     try {
       let finalResults;
 
       if (gameType === 'positions') {
+        const err = validatePositions();
+        if (err) { toast.error(err); setSaving(false); return; }
+
+        const participants = players.map(p => ({
+          attendee_id: p.id,
+          position: parseInt(positionInputs[p.id], 10),
+        }));
+
         await axios.put(
           `/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/positions`,
-          { participants: orderedPlayers.map((p, i) => ({ attendee_id: p.id, position: i + 1 })) }
+          { participants }
         );
-        finalResults = orderedPlayers.map((p, i) => ({ id: p.id, name: p.name, position: i + 1 }));
 
-      } else if (gameType === 'scores') {
-        await axios.post(
-          `/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/rounds`,
-          { scores: players.map(p => ({ attendee_id: p.id, score: parseFloat(scores[p.id]) || 0 })) }
-        );
-        const { data } = await axios.post(
-          `/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/finalize`,
-          { higher_is_better: true }
-        );
-        finalResults = (data.positions || []).map(r => ({
-          id:       r.attendee_id,
-          name:     players.find(p => p.id === r.attendee_id)?.name || 'Unknown',
-          position: r.position,
-          score:    parseFloat(scores[r.attendee_id]) || 0,
-        }));
+        finalResults = participants
+          .map(p => ({
+            id:       p.attendee_id,
+            name:     players.find(pl => pl.id === p.attendee_id)?.name || 'Unknown',
+            position: p.position,
+          }))
+          .sort((a, b) => a.position - b.position);
 
       } else {
-        // cumulative — submit all rounds then finalize
-        for (const round of rounds) {
+        // scores or cumulative — both use rounds + finalize
+        const scoresToSubmit = gameType === 'scores'
+          ? players.map(p => ({ attendee_id: p.id, score: parseFloat(scores[p.id]) || 0 }))
+          : null;
+
+        if (gameType === 'scores') {
           await axios.post(
             `/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/rounds`,
-            { scores: players.map(p => ({ attendee_id: p.id, score: parseFloat(round[p.id]) || 0 })) }
+            { scores: scoresToSubmit }
           );
+        } else {
+          // Submit each tracked round
+          for (const round of rounds) {
+            await axios.post(
+              `/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/rounds`,
+              { scores: players.map(p => ({ attendee_id: p.id, score: parseFloat(round[p.id]) || 0 })) }
+            );
+          }
         }
-        const totals = getTotals();
+
         const { data } = await axios.post(
           `/api/game-nights/${widget.nightId}/games/${gameIdRef.current}/finalize`,
-          { higher_is_better: true }
+          { higher_is_better: higherIsBetter }
         );
-        finalResults = (data.positions || []).map(r => ({
-          id:       r.attendee_id,
-          name:     players.find(p => p.id === r.attendee_id)?.name || 'Unknown',
-          position: r.position,
-          score:    totals[r.attendee_id] ?? 0,
-        }));
+
+        const totals = gameType === 'scores'
+          ? Object.fromEntries(players.map(p => [p.id, parseFloat(scores[p.id]) || 0]))
+          : getTotals();
+
+        finalResults = (data.positions || [])
+          .map(r => ({
+            id:       r.attendee_id,
+            name:     players.find(p => p.id === r.attendee_id)?.name || 'Unknown',
+            position: r.position,
+            score:    totals[r.attendee_id] ?? 0,
+          }))
+          .sort((a, b) => a.position - b.position);
       }
 
-      finalResults.sort((a, b) => a.position - b.position);
       setCompletedResults(finalResults);
       setCompleted(true);
       onComplete(widget.id, finalResults);
@@ -217,7 +239,9 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
               <div key={r.id ?? i} className="gw-summary-row">
                 <span className="gw-summary-rank">{rankLabel(i)}</span>
                 <span className="gw-summary-name">{r.name}</span>
-                {r.score != null && <span className="gw-summary-score">{r.score} pts</span>}
+                {r.score != null && gameType !== 'positions' && (
+                  <span className="gw-summary-score">{r.score} pts</span>
+                )}
               </div>
             ))}
           </div>
@@ -226,19 +250,53 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
     );
   }
 
-  // ══ CONFIG PHASE ══════════════════════════════════════════════════════
+  // ══ READ-ONLY (night ended) ═══════════════════════════════════════════════
+  if (readOnly) {
+    return (
+      <div className="gw-widget gw-widget--done">
+        <div className="gw-completed-header" style={{ cursor: 'default' }}>
+          <div className="gw-completed-left">
+            <span className="gw-type-badge">⏸</span>
+            <span className="gw-completed-name">{gameName || widget.name || 'In Progress'}</span>
+          </div>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Night ended</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ══ CONFIG PHASE ══════════════════════════════════════════════════════════
   if (!configured) {
     return (
       <div className="gw-widget">
         <div className="gw-header">
-          <div className="gw-header-left">
+          <div className="gw-header-left" style={{ position: 'relative', flex: 1 }}>
             <input
+              ref={nameInputRef}
               className="input gw-name-input"
-              placeholder="Game name (e.g. Poker, Catan…)"
+              placeholder="Game name (e.g. poker, catan…)"
               value={gameName}
-              onChange={e => setGameName(e.target.value)}
+              onChange={e => { setGameName(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               autoFocus
             />
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="gw-suggestions">
+                {suggestions.map(g => (
+                  <button
+                    key={g.id}
+                    className="gw-suggestion-item"
+                    onMouseDown={() => {
+                      setGameName(g.name);
+                      setShowSuggestions(false);
+                    }}
+                  >
+                    {g.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button className="gw-remove-btn" onClick={() => onRemove(widget.id)} title="Discard">✕</button>
         </div>
@@ -246,7 +304,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
         <div className="gw-config">
           <div className="gw-type-selector">
             {[
-              { key: 'positions',  label: '🏅 Positions',  desc: 'Drag to rank players' },
+              { key: 'positions',  label: '🏅 Positions',  desc: 'Enter each player\'s place (1st, 2nd…)' },
               { key: 'scores',     label: '🎯 Scores',     desc: 'Enter a final score each' },
               { key: 'cumulative', label: '📊 Rounds',     desc: 'Track score round by round' },
             ].map(({ key, label, desc }) => (
@@ -260,6 +318,27 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
               </button>
             ))}
           </div>
+
+          {/* Scoring direction toggle (scores + cumulative only) */}
+          {(gameType === 'scores' || gameType === 'cumulative') && (
+            <div className="gw-toggle-row">
+              <span className="gw-toggle-label">Winning condition:</span>
+              <div className="gw-toggle-group">
+                <button
+                  className={`gw-toggle-btn ${higherIsBetter ? 'gw-toggle-btn--active' : ''}`}
+                  onClick={() => setHigherIsBetter(true)}
+                >
+                  ↑ Higher wins
+                </button>
+                <button
+                  className={`gw-toggle-btn ${!higherIsBetter ? 'gw-toggle-btn--active' : ''}`}
+                  onClick={() => setHigherIsBetter(false)}
+                >
+                  ↓ Lower wins
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="gw-player-picker">
             <p className="gw-picker-label">Who's playing? ({players.length} selected)</p>
@@ -292,7 +371,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
     );
   }
 
-  // ══ ACTIVE TRACKING ══════════════════════════════════════════════════
+  // ══ ACTIVE TRACKING ══════════════════════════════════════════════════════
   return (
     <div className="gw-widget">
       <div className="gw-header">
@@ -301,6 +380,11 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
             {gameType === 'positions' ? '🏅 Positions' : gameType === 'scores' ? '🎯 Scores' : '📊 Rounds'}
           </span>
           <h3 className="gw-title">{gameName}</h3>
+          {gameType !== 'positions' && (
+            <span className="gw-dir-badge" title="Winning condition">
+              {higherIsBetter ? '↑ high wins' : '↓ low wins'}
+            </span>
+          )}
         </div>
         <button
           className="gw-remove-btn"
@@ -314,28 +398,46 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
 
       <div className="gw-body">
 
+        {/* ── Positions: numbered inputs ── */}
         {gameType === 'positions' && (
-          <div className="gw-dnd">
-            <p className="gw-hint">Drag to set finishing order — top = 1st place</p>
-            {orderedPlayers.map((player, i) => (
-              <div
-                key={player.id}
-                className="gw-dnd-card"
-                draggable
-                onDragStart={e => handleDragStart(e, i)}
-                onDragEnter={e => handleDragEnter(e, i)}
-                onDragOver={handleDragOver}
-                onDragEnd={handleDragEnd}
-              >
-                <span className="gw-dnd-rank">{rankLabel(i)}</span>
-                <span className="gw-dnd-handle" aria-hidden>⠿</span>
-                <span className="gw-dnd-name">{player.name}</span>
-                {player.type === 'guest' && <span className="gw-guest-tag">Guest</span>}
+          <div className="gw-positions">
+            <p className="gw-hint">Enter each player's finishing position (1 = 1st place). Every number must be unique and between 1 and {players.length}.</p>
+            <div className="gw-position-grid">
+              {players.map(player => (
+                <div key={player.id} className="gw-position-row">
+                  <span className="gw-position-name">
+                    {player.name}
+                    {player.type === 'guest' && <span className="gw-guest-tag">Guest</span>}
+                  </span>
+                  <input
+                    type="number"
+                    className="gw-score-input"
+                    min="1"
+                    max={players.length}
+                    placeholder="#"
+                    value={positionInputs[player.id] ?? ''}
+                    onChange={e => setPositionInputs(prev => ({ ...prev, [player.id]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            {/* Live preview sorted by entered position */}
+            {players.every(p => positionInputs[p.id] && !isNaN(parseInt(positionInputs[p.id]))) && (
+              <div className="gw-position-preview">
+                {[...players]
+                  .sort((a, b) => parseInt(positionInputs[a.id]) - parseInt(positionInputs[b.id]))
+                  .map((p, i) => (
+                    <span key={p.id} className="gw-preview-pill">
+                      {rankLabel(parseInt(positionInputs[p.id]) - 1)} {p.name}
+                    </span>
+                  ))
+                }
               </div>
-            ))}
+            )}
           </div>
         )}
 
+        {/* ── Scores: single score per player ── */}
         {gameType === 'scores' && (
           <div className="gw-scores">
             {players.map(player => (
@@ -356,6 +458,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
           </div>
         )}
 
+        {/* ── Cumulative rounds ── */}
         {gameType === 'cumulative' && (
           <div className="gw-rounds-wrap">
             <div className="gw-rounds-table">

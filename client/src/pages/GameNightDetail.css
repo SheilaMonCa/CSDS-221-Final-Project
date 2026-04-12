@@ -248,3 +248,30 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+
+
+/* Ended badge in header */
+.gnd-ended-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+/* Confirmation modal overlay (reuse gnd prefix) */
+.gnd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}

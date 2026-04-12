@@ -44,7 +44,6 @@ export default function GroupDetail() {
           const lbRes = await axios.get(`/api/groups/${id}/leaderboard`);
           setLeaderboard(lbRes.data || []);
         } catch {
-          // Graceful fallback: show all members with 0 pts if no games yet
           setLeaderboard((membersRes.data || []).map(m => ({ ...m, points: 0, wins: 0, games: 0 })));
         }
       } catch {
@@ -56,6 +55,10 @@ export default function GroupDetail() {
     fetchAll();
   }, [id]);
 
+  // Split nights into active and past
+  const activeNights = gameNights.filter(n => n.is_active !== false);
+  const pastNights   = gameNights.filter(n => n.is_active === false);
+
   const handleAddMember = async (e) => {
     e.preventDefault();
     if (!addUsername.trim()) return;
@@ -65,7 +68,6 @@ export default function GroupDetail() {
       toast.success(`${addUsername} added to group!`);
       setAddUsername('');
       setShowAddModal(false);
-      // Refresh members
       const res = await axios.get(`/api/groups/${id}/members`);
       setMembers(res.data || []);
     } catch (err) {
@@ -95,6 +97,11 @@ export default function GroupDetail() {
   };
 
   const rankIcon = (i) => ['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`;
+
+  const formatNightDate = (night) =>
+    new Date(night.played_at || night.created_at).toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
+    });
 
   if (loading) {
     return (
@@ -142,7 +149,6 @@ export default function GroupDetail() {
       {/* ── Main grid ── */}
       <div className="gd-grid">
 
-        {/* Left: leaderboard + recent nights */}
         <div className="gd-main">
 
           {/* All-time leaderboard */}
@@ -173,21 +179,66 @@ export default function GroupDetail() {
             )}
           </div>
 
-          {/* Recent game nights */}
+          {/* Active game nights */}
+          {activeNights.length > 0 && (
+            <div className="card">
+              <div className="gd-card-header">
+                <h3 className="gd-card-title" style={{ margin: 0 }}>
+                  🟢 Active Nights · {activeNights.length}
+                </h3>
+                <button className="btn btn-primary" style={{ fontSize: '13px' }} onClick={() => setShowNightModal(true)}>
+                  + New Night
+                </button>
+              </div>
+              {activeNights.map(night => (
+                <div
+                  key={night.id}
+                  className="gd-night-row"
+                  onClick={() => navigate(`/game-nights/${night.id}`)}
+                >
+                  <div>
+                    <div className="gd-night-name">
+                      {night.name || 'Game Night'}
+                      <span className="gd-active-badge">LIVE</span>
+                    </div>
+                    <div className="gd-night-meta">
+                      {formatNightDate(night)}
+                      {night.game_count > 0 && ` · ${night.game_count} game${night.game_count !== 1 ? 's' : ''}`}
+                    </div>
+                  </div>
+                  <span className="gd-night-arrow">→</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Past game nights */}
           <div className="card">
             <div className="gd-card-header">
-              <h3 className="gd-card-title" style={{ margin: 0 }}>Recent Game Nights</h3>
-              <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setShowNightModal(true)}>
-                + New Night
-              </button>
+              <h3 className="gd-card-title" style={{ margin: 0 }}>
+                Past Game Nights
+                {pastNights.length > 0 && ` · ${pastNights.length}`}
+              </h3>
+              {activeNights.length === 0 && (
+                <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setShowNightModal(true)}>
+                  + New Night
+                </button>
+              )}
             </div>
 
-            {gameNights.length === 0 ? (
+            {pastNights.length === 0 && activeNights.length === 0 ? (
               <div className="gd-empty-state">
                 <p>No game nights yet.</p>
+                <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
+                  Start First Night
+                </button>
+              </div>
+            ) : pastNights.length === 0 ? (
+              <div className="gd-empty-state">
+                <p>No completed nights yet — end a night to archive it here.</p>
               </div>
             ) : (
-              gameNights.map((night, i) => (
+              pastNights.map(night => (
                 <div
                   key={night.id}
                   className="gd-night-row"
@@ -196,9 +247,7 @@ export default function GroupDetail() {
                   <div>
                     <div className="gd-night-name">{night.name || 'Game Night'}</div>
                     <div className="gd-night-meta">
-                      {new Date(night.played_at || night.created_at).toLocaleDateString('en-US', {
-                        weekday: 'short', month: 'short', day: 'numeric',
-                      })}
+                      {formatNightDate(night)}
                       {night.game_count > 0 && ` · ${night.game_count} game${night.game_count !== 1 ? 's' : ''}`}
                     </div>
                   </div>
@@ -250,7 +299,6 @@ export default function GroupDetail() {
 
       {/* ── Modals ── */}
 
-      {/* Add member */}
       {showAddModal && (
         <div className="gd-modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="gd-modal card" onClick={e => e.stopPropagation()}>
@@ -279,7 +327,6 @@ export default function GroupDetail() {
         </div>
       )}
 
-      {/* Leave confirmation */}
       {showLeaveModal && (
         <div className="gd-modal-overlay" onClick={() => setShowLeaveModal(false)}>
           <div className="gd-modal card" onClick={e => e.stopPropagation()}>
@@ -297,7 +344,6 @@ export default function GroupDetail() {
         </div>
       )}
 
-      {/* Game night creator */}
       <GameNightCreator
         isOpen={showNightModal}
         onClose={() => setShowNightModal(false)}

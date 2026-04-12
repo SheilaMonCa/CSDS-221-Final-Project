@@ -13,7 +13,9 @@ export default function GameNightDetail() {
   const [loading,   setLoading]   = useState(true);
   const [widgets,   setWidgets]   = useState([]);
   const [widgetCounter, setWidgetCounter] = useState(1);
-  const [pointsMap, setPointsMap] = useState({});   // { attendeeId: cumulativePoints }
+  const [pointsMap, setPointsMap] = useState({});
+  const [endingNight, setEndingNight] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -29,7 +31,6 @@ export default function GameNightDetail() {
         }));
         setAttendees(normalised);
 
-        // Build attendee id→name map for result hydration
         const attendeeMap = {};
         (data.attendees || []).forEach(a => {
           attendeeMap[a.id] = a.username || a.guest_name || 'Unknown';
@@ -68,7 +69,6 @@ export default function GameNightDetail() {
           };
         });
 
-        // Newest first
         setWidgets(hydratedWidgets.reverse());
         setPointsMap(pts);
       } catch {
@@ -80,6 +80,22 @@ export default function GameNightDetail() {
     load();
   }, [nightId]);
 
+  const isNightActive = night?.is_active !== false; // treat null/undefined as active
+
+  const handleEndNight = async () => {
+    setEndingNight(true);
+    try {
+      await axios.put(`/api/game-nights/${nightId}/end`);
+      setNight(prev => ({ ...prev, is_active: false }));
+      setShowEndConfirm(false);
+      toast.success('Game night ended — results are now locked 🔒');
+    } catch {
+      toast.error('Failed to end game night');
+    } finally {
+      setEndingNight(false);
+    }
+  };
+
   const addWidget = () => {
     const id = `new-${widgetCounter}`;
     setWidgetCounter(n => n + 1);
@@ -89,15 +105,12 @@ export default function GameNightDetail() {
     ]);
   };
 
-  // Called by widget when configure succeeds — updates the label in parent state immediately
   const handleNameResolved = useCallback((widgetId, resolvedName) => {
     setWidgets(prev =>
       prev.map(w => w.id === widgetId ? { ...w, name: resolvedName } : w)
     );
   }, []);
 
-  // Called by widget when mark-done succeeds
-  // results = [{id: attendeeId, name, position, score?}]
   const handleComplete = useCallback((widgetId, results) => {
     const totalPlayers = results.length;
     setWidgets(prev =>
@@ -117,7 +130,6 @@ export default function GameNightDetail() {
     setWidgets(prev => prev.filter(w => w.id !== widgetId));
   }, []);
 
-  // Leaderboard: all attendees, sorted by cumulative points this night
   const leaderboard = [...attendees]
     .map(a => ({ ...a, points: pointsMap[a.id] || 0 }))
     .sort((a, b) => b.points - a.points);
@@ -147,11 +159,47 @@ export default function GameNightDetail() {
       <header className="gnd-header">
         <div className="gnd-header-left">
           <Link to="/groups" className="gnd-back-link">← Back to Groups</Link>
-          <h1 className="gnd-title">{night?.name ?? 'Game Night'}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 className="gnd-title">{night?.name ?? 'Game Night'}</h1>
+            {!isNightActive && (
+              <span className="gnd-ended-badge">🔒 Ended</span>
+            )}
+          </div>
           <p className="gnd-meta">{dateStr} · {attendees.length} players</p>
         </div>
-        <button className="btn btn-primary gnd-add-btn" onClick={addWidget}>+ Add Game</button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {isNightActive && (
+            <>
+              <button
+                className="btn btn-ghost"
+                style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                onClick={() => setShowEndConfirm(true)}
+              >
+                🔒 End Night
+              </button>
+              <button className="btn btn-primary gnd-add-btn" onClick={addWidget}>+ Add Game</button>
+            </>
+          )}
+        </div>
       </header>
+
+      {/* End night confirmation modal */}
+      {showEndConfirm && (
+        <div className="gnd-modal-overlay" onClick={() => setShowEndConfirm(false)}>
+          <div className="card" style={{ maxWidth: 420, width: '100%', padding: '28px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '8px' }}>End Game Night?</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
+              This will lock all scores and results. No further changes can be made. Any in-progress games will be left incomplete.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button className="btn btn-ghost" onClick={() => setShowEndConfirm(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleEndNight} disabled={endingNight}>
+                {endingNight ? 'Ending…' : 'Yes, End Night'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="gnd-grid">
         <main className="gnd-main">
@@ -168,6 +216,7 @@ export default function GameNightDetail() {
                     onComplete={handleComplete}
                     onRemove={handleRemove}
                     onNameResolved={handleNameResolved}
+                    readOnly={!isNightActive}
                   />
                 ))}
               </div>
@@ -186,6 +235,7 @@ export default function GameNightDetail() {
                     onComplete={handleComplete}
                     onRemove={handleRemove}
                     onNameResolved={handleNameResolved}
+                    readOnly={!isNightActive}
                   />
                 ))}
               </div>
@@ -196,10 +246,16 @@ export default function GameNightDetail() {
             <div className="gnd-empty">
               <span className="gnd-empty-icon">🎲</span>
               <h3>No games yet</h3>
-              <p>Hit "+ Add Game" to start tracking your first game of the night.</p>
-              <button className="btn btn-primary" style={{ marginTop: '20px' }} onClick={addWidget}>
-                + Add First Game
-              </button>
+              {isNightActive ? (
+                <>
+                  <p>Hit "+ Add Game" to start tracking your first game of the night.</p>
+                  <button className="btn btn-primary" style={{ marginTop: '20px' }} onClick={addWidget}>
+                    + Add First Game
+                  </button>
+                </>
+              ) : (
+                <p>This game night has ended with no games recorded.</p>
+              )}
             </div>
           )}
         </main>

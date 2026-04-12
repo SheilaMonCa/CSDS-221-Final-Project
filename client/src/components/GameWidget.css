@@ -474,3 +474,132 @@
 .gw-dnd-card--dragging {
   opacity: 0.4;
 }
+
+/* Autocomplete suggestions dropdown */
+.gw-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  z-index: 100;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.gw-suggestion-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.gw-suggestion-item:hover {
+  background: rgba(0, 212, 170, 0.08);
+  color: var(--primary);
+}
+
+/* Winning condition toggle */
+.gw-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gw-toggle-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.gw-toggle-group {
+  display: flex;
+  gap: 6px;
+}
+
+.gw-toggle-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gw-toggle-btn--active {
+  border-color: var(--primary);
+  background: rgba(0, 212, 170, 0.1);
+  color: var(--primary);
+}
+
+/* Direction badge shown in active tracking header */
+.gw-dir-badge {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+/* Position input grid (replaces DnD) */
+.gw-positions {
+  margin-bottom: 16px;
+}
+
+.gw-position-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.gw-position-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.gw-position-row:last-child { border-bottom: none; }
+
+.gw-position-name {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Live position preview */
+.gw-position-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: rgba(0, 212, 170, 0.05);
+  border: 1px solid rgba(0, 212, 170, 0.2);
+  border-radius: 10px;
+}
+
+.gw-preview-pill {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+

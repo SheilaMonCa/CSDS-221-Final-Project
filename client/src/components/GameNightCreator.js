@@ -10,7 +10,8 @@ import './GameNightCreator.css';
  * Props:
  *   isOpen        — boolean
  *   onClose       — function
- *   prefillGroupId — optional string: auto-fetches that group's members on open
+ *   prefillGroupId — optional string/number: auto-fetches that group's members on open
+ *                    AND links the new night to that group via groups_present
  */
 export default function GameNightCreator({ isOpen, onClose, prefillGroupId = null }) {
   const { user } = useAuth();
@@ -87,7 +88,6 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
     setPersonInput('');
 
     try {
-      // Try to resolve as a registered user first
       const { data } = await axios.get(`/api/users/search?q=${encodeURIComponent(raw)}`);
       if (data?.id) {
         const alreadyIn = pills.some(p => p.userId === data.id);
@@ -109,7 +109,6 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
       // Not found as user — fall through to guest
     }
 
-    // Add as named guest
     setPills(prev => [...prev, {
       id: `guest-${Date.now()}-${Math.random()}`,
       name: raw,
@@ -138,6 +137,9 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
     }
     setStarting(true);
     try {
+      // ✅ FIX: pass group_ids so this night appears in the group's game-nights list
+      const groupIds = prefillGroupId ? [parseInt(prefillGroupId, 10)] : [];
+
       const { data } = await axios.post('/api/game-nights', {
         name: nightName.trim(),
         created_by: user.id,
@@ -146,6 +148,7 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
             ? { user_id: p.userId }
             : { guest_name: p.name }
         ),
+        group_ids: groupIds,
       });
       toast.success('Game night started! 🎲');
       onClose();
