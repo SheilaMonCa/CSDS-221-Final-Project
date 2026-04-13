@@ -70,6 +70,7 @@
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 28px;
+  justify-content: center;
 }
 
 .dash-chip {
@@ -80,8 +81,8 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px 18px;
-  min-width: 140px;
-  flex: 1;
+  min-width: 150px;
+  flex: 1 1 150px;
   max-width: 220px;
   transition: border-color 0.15s;
 }
@@ -462,13 +463,35 @@
 .history-list { }
 
 .history-item {
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.history-item:last-child { border-bottom: none; }
+.history-item:hover { background: rgba(255,255,255,0.02); }
+
+.history-item-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 14px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
 }
-.history-item:last-child { border-bottom: none; }
+
+.history-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.history-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.history-chevron--open { transform: rotate(90deg); }
 
 .game-name {
   font-weight: 600;
@@ -485,8 +508,103 @@
   font-weight: 700;
   font-size: 14px;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 .game-rank.win { color: var(--primary); }
+
+/* Expanded detail panel */
+.history-expanded {
+  padding: 0 16px 16px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: hist-expand 0.18s ease-out;
+}
+
+@keyframes hist-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.history-expanded-loading {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 0 8px;
+}
+
+/* Results table */
+.history-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.history-result-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 13px;
+  transition: background 0.12s;
+}
+.history-result-row:last-child { border-bottom: none; }
+.history-result-row--me {
+  background: rgba(0, 212, 170, 0.05);
+}
+
+.history-result-rank {
+  font-size: 17px;
+  min-width: 28px;
+  line-height: 1;
+}
+
+.history-result-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.history-result-name--me {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.history-result-score {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 13px;
+}
+
+.history-expanded-links {
+  display: flex;
+  gap: 10px;
+}
+
+.history-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.history-link-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(0, 212, 170, 0.07);
+}
 
 /* ── Chart shared styles (tooltip, legend, filter pills) ── */
 .chart-svg {

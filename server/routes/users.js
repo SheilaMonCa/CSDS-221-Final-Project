@@ -167,11 +167,15 @@ router.get("/:id/history", async (req, res) => {
     const result = await pool.query(
       `SELECT
          g.name           AS game_name,
+         g.id             AS game_id,
+         gp.id            AS games_played_id,
+         gp.game_type,
+         gn.id            AS game_night_id,
          gn.name          AS night_name,
          gn.played_at,
          gr.position,
-         COUNT(*) OVER (PARTITION BY gp.id) AS total_players,
-         (gr.position = 1)                  AS is_win
+         (SELECT COUNT(*) FROM game_participants gpart WHERE gpart.games_played_id = gp.id) AS total_players,
+         (gr.position = 1) AS is_win
        FROM attendees a
        JOIN game_results gr  ON gr.attendee_id   = a.id
        JOIN games_played gp  ON gp.id            = gr.games_played_id
@@ -308,6 +312,64 @@ router.get("/:id/vs/:otherId", async (req, res) => {
       // games list for the filter pills
       games: byGame.map(g => ({ id: g.game_id, name: g.game_name })),
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/users/history-detail/:gamesPlayedId
+// Full results for a single completed game — all players, positions, and scores.
+// Used by the dashboard history expand panel.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get("/history-detail/:gamesPlayedId", async (req, res) => {
+  const { gamesPlayedId } = req.params;
+  try {
+    const gpRes = await pool.query(
+      `SELECT gp.id, gp.game_type, gp.higher_is_better, g.name AS game_name
+       FROM games_played gp
+       JOIN games g ON g.id = gp.game_id
+       WHERE gp.id = $1`,
+      [gamesPlayedId]
+    );
+    if (!gpRes.rows[0]) return res.status(404).json({ error: "Game not found" });
+    const gp = gpRes.rows[0];
+
+    // All participants with their final position
+    const partRes = await pool.query(
+      `SELECT COALESCE(u.username, a.guest_name) AS name,
+              a.user_id,
+              gr.position
+       FROM game_participants gpart
+       JOIN attendees a ON a.id = gpart.attendee_id
+       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN game_results gr
+         ON gr.games_played_id = gpart.games_played_id
+        AND gr.attendee_id = gpart.attendee_id
+       WHERE gpart.games_played_id = $1
+       ORDER BY gr.position ASC NULLS LAST`,
+      [gamesPlayedId]
+    );
+
+    // Round scores (for cumulative / scores games)
+    let rounds = [];
+    if (gp.game_type === "cumulative" || gp.game_type === "scores") {
+      const roundsRes = await pool.query(
+        `SELECT gr.round_number, rs.attendee_id,
+                COALESCE(u.username, a.guest_name) AS name,
+                rs.score
+         FROM game_rounds gr
+         JOIN round_scores rs ON rs.round_id = gr.id
+         JOIN attendees a ON a.id = rs.attendee_id
+         LEFT JOIN users u ON u.id = a.user_id
+         WHERE gr.games_played_id = $1
+         ORDER BY gr.round_number`,
+        [gamesPlayedId]
+      );
+      rounds = roundsRes.rows;
+    }
+
+    res.json({ ...gp, participants: partRes.rows, rounds });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

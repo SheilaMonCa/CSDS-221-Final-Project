@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import EyeIcon from '../components/EyeIcon';
 import GameNightCreator from '../components/GameNightCreator';
 import './Dashboard.css';
@@ -503,11 +504,14 @@ function H2HSection({ userId }) {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [stats,   setStats]   = useState(null);
   const [chips,   setChips]   = useState(null);
   const [byGame,  setByGame]  = useState([]);
   const [history, setHistory] = useState([]);
+  const [expandedHistory, setExpandedHistory] = useState(null);
+  const [historyDetails, setHistoryDetails] = useState({}); // gamesPlayedId -> detail data
 
   // Modals
   const [showNightModal,  setShowNightModal]  = useState(false);
@@ -592,6 +596,23 @@ export default function Dashboard() {
 
   // Ordinal emoji for history list
   const rankIcon = pos => (['🥇', '🥈', '🥉'][pos - 1] ?? `#${pos}`);
+  const rankEmoji = pos => (['🥇', '🥈', '🥉'][pos - 1] ?? `#${pos}`);
+
+  const toggleHistoryItem = async (game) => {
+    const gpId = game.games_played_id;
+    if (expandedHistory === gpId) {
+      setExpandedHistory(null);
+      return;
+    }
+    setExpandedHistory(gpId);
+    if (historyDetails[gpId]) return; // already loaded
+    try {
+      const { data } = await axios.get(`/api/users/history-detail/${gpId}`);
+      setHistoryDetails(prev => ({ ...prev, [gpId]: data }));
+    } catch {
+      setHistoryDetails(prev => ({ ...prev, [gpId]: { error: true } }));
+    }
+  };
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -674,29 +695,88 @@ export default function Dashboard() {
         <h3>Recent Game History</h3>
         <div className="history-list" style={{ marginTop: 16 }}>
           {history.length > 0
-            ? history.map((game, i) => (
-              <div
-                key={`hist-${i}-${game.game_name}-${game.night_name}`}
-                className="history-item"
-              >
-                <div className="game-info">
-                  <div className="game-name">{game.game_name}</div>
-                  <div className="game-meta">
-                    {game.played_at
-                      ? new Date(game.played_at).toLocaleDateString('en-US', {
-                          month: 'short', day: 'numeric', year: 'numeric',
-                        })
-                      : 'Date unknown'}
-                    {game.night_name && ` · ${game.night_name}`}
+            ? history.map((game, i) => {
+                const gpId = game.games_played_id;
+                const isOpen = expandedHistory === gpId;
+                const detail = historyDetails[gpId];
+                return (
+                  <div key={`hist-${i}-${gpId}`} className="history-item">
+                    {/* ── Collapsed row ── */}
+                    <div className="history-item-row" onClick={() => toggleHistoryItem(game)}>
+                      <div className="history-item-left">
+                        <span className={`history-chevron ${isOpen ? 'history-chevron--open' : ''}`}>▶</span>
+                        <div>
+                          <div className="game-name">{game.game_name}</div>
+                          <div className="game-meta">
+                            {game.played_at
+                              ? new Date(game.played_at).toLocaleDateString('en-US', {
+                                  month: 'short', day: 'numeric', year: 'numeric',
+                                })
+                              : 'Date unknown'}
+                            {game.night_name && ` · ${game.night_name}`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
+                        {game.is_win
+                          ? '🏆 1st'
+                          : `${rankIcon(Number(game.position))} of ${game.total_players}`}
+                      </div>
+                    </div>
+
+                    {/* ── Expanded detail ── */}
+                    {isOpen && (
+                      <div className="history-expanded">
+                        {!detail ? (
+                          <div className="history-expanded-loading">Loading…</div>
+                        ) : detail.error ? (
+                          <div className="history-expanded-loading">Couldn't load game details.</div>
+                        ) : (
+                          <>
+                            {/* Results table — sorted by position */}
+                            <div className="history-results">
+                              {detail.participants.map((p, pi) => {
+                                const isMe = Number(p.user_id) === Number(user.id);
+                                const pos = Number(p.position);
+                                // Compute total score if this is a scored game
+                                let score = null;
+                                if (detail.game_type === 'scores' || detail.game_type === 'cumulative') {
+                                  score = detail.rounds.reduce((sum, r) => {
+                                    if (r.name === p.name) return sum + Number(r.score);
+                                    return sum;
+                                  }, 0);
+                                }
+                                return (
+                                  <div key={pi} className={`history-result-row ${isMe ? 'history-result-row--me' : ''}`}>
+                                    <span className="history-result-rank">{rankEmoji(pos)}</span>
+                                    <span className={`history-result-name ${isMe ? 'history-result-name--me' : ''}`}>
+                                      {p.name}{isMe ? ' (you)' : ''}
+                                    </span>
+                                    {score !== null && (
+                                      <span className="history-result-score">{score} pts</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* View night link */}
+                            {game.game_night_id && (
+                              <div className="history-expanded-links">
+                                <button
+                                  className="history-link-btn"
+                                  onClick={e => { e.stopPropagation(); navigate(`/game-nights/${game.game_night_id}`); }}
+                                >
+                                  🌙 View Game Night →
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
-                  {game.is_win
-                    ? '🏆 WIN'
-                    : `${rankIcon(Number(game.position))} of ${game.total_players}`}
-                </div>
-              </div>
-            ))
+                );
+              })
             : (
               <div style={{ padding: '32px 0', textAlign: 'center' }}>
                 <p className="sub-text">No games recorded yet.</p>
