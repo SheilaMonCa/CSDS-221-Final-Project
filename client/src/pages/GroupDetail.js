@@ -112,7 +112,11 @@ export default function GroupDetail() {
     if (!addUsername.trim()) return;
     setAddingMember(true);
     try {
-      await axios.post(`/api/groups/${id}/members`, { username: addUsername.trim() });
+      const { data } = await axios.post(`/api/groups/${id}/members`, { username: addUsername.trim() });
+      if (data.found === false) {
+        toast.error(`"${addUsername}" doesn't have an account. Only registered users can join groups.`);
+        return;
+      }
       toast.success(`${addUsername} added to group!`);
       setAddUsername('');
       setShowAddModal(false);

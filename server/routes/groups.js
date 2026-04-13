@@ -137,7 +137,7 @@ router.post("/:group_id/members", async (req, res) => {
   const { username } = req.body;
   try {
     const user = await pool.query("SELECT id FROM users WHERE username = $1", [username]);
-    if (!user.rows[0]) return res.status(404).json({ error: "User not found" });
+    if (!user.rows[0]) return res.json({ found: false, error: "User not found" });
     await pool.query(
       "INSERT INTO group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
       [req.params.group_id, user.rows[0].id]

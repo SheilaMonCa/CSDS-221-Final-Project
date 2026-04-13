@@ -6,56 +6,252 @@ import EyeIcon from '../components/EyeIcon';
 import GameNightCreator from '../components/GameNightCreator';
 import './Dashboard.css';
 
-// ─── Colour palette for chart lines ─────────────────────────────────────────
-const PLAYER_COLOURS = [
-  '#00d4aa', '#00b4d8', '#7b61ff', '#ff6b6b', '#ffd166',
-  '#06d6a0', '#ef476f', '#118ab2', '#fca311', '#9b5de5',
-];
+const COLOURS = ['#00d4aa', '#00b4d8', '#7b61ff', '#ff6b6b', '#ffd166', '#06d6a0'];
 
-// ─── Points-Over-Time Line Chart ─────────────────────────────────────────────
-function PointsChart({ data, gameFilter }) {
-  const svgRef = useRef(null);
-  const [tooltip, setTooltip] = useState(null);
-  const [hoveredPlayer, setHoveredPlayer] = useState(null);
+// ─── Stat Chip ────────────────────────────────────────────────────────────────
+function StatChip({ icon, label, value, sub }) {
+  return (
+    <div className="dash-chip">
+      <span className="dash-chip-icon">{icon}</span>
+      <div className="dash-chip-body">
+        <div className="dash-chip-value">{value}</div>
+        <div className="dash-chip-label">{label}</div>
+        {sub && <div className="dash-chip-sub">{sub}</div>}
+      </div>
+    </div>
+  );
+}
 
-  // data shape: { players: [{id, username, colour}], nights: [{nightId, name, date, scores: {playerId: cumulativePts}}] }
-  if (!data || data.nights.length < 1) {
+// ─── Placement Donut Chart ────────────────────────────────────────────────────
+function PlacementPie({ stats }) {
+  const total = Number(stats?.total_games ?? 0);
+
+  if (!stats || total === 0) {
     return (
-      <div className="chart-empty">
-        <span>📊</span>
-        <p>Play more games to see the chart come alive!</p>
+      <div className="dash-empty-chart">
+        <span>🎲</span>
+        <p>No completed games yet</p>
       </div>
     );
   }
 
-  const { players, nights } = data;
-  const W = 700, H = 280;
-  const PAD = { top: 20, right: 20, bottom: 48, left: 46 };
-  const chartW = W - PAD.left - PAD.right;
-  const chartH = H - PAD.top - PAD.bottom;
+  const wins   = Number(stats.wins         ?? 0);
+  const second = Number(stats.second_place ?? 0);
+  const third  = Number(stats.third_place  ?? 0);
+  const rest   = Math.max(0, total - wins - second - third);
 
-  // X: one tick per night
-  const xScale = (i) => (i / Math.max(nights.length - 1, 1)) * chartW;
+  const slices = [
+    { label: '1st Place', value: wins,   color: '#00d4aa', emoji: '🥇' },
+    { label: '2nd Place', value: second, color: '#00b4d8', emoji: '🥈' },
+    { label: '3rd Place', value: third,  color: '#7b61ff', emoji: '🥉' },
+    { label: 'No Podium', value: rest,   color: '#2e2e40', emoji: '📊' },
+  ].filter(s => s.value > 0);
 
-  // Y: 0 to maxPts
-  const allPts = players.flatMap(p => nights.map(n => n.scores[p.id] || 0));
-  const maxPts = Math.max(...allPts, 1);
-  const yScale = (v) => chartH - (v / maxPts) * chartH;
+  // SVG donut — handle 100% single-slice edge case
+  const cx = 80, cy = 80, R = 62, innerR = 40;
+  let cumAngle = -Math.PI / 2;
 
-  // Build polyline points per player
-  const buildPath = (player) => {
-    return nights.map((n, i) => {
-      const x = PAD.left + xScale(i);
-      const y = PAD.top + yScale(n.scores[player.id] || 0);
-      return `${x},${y}`;
-    }).join(' ');
-  };
+  const paths = slices.map(slice => {
+    const frac = slice.value / total;
 
-  // Y axis ticks
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(f * maxPts));
+    // Full circle: draw two 180° arcs so the SVG arc command works
+    if (frac >= 0.9999) {
+      return (
+        <path
+          key={slice.label}
+          d={`M ${cx} ${cy - R}
+              A ${R} ${R} 0 1 1 ${cx - 0.001} ${cy - R}
+              L ${cx - 0.001} ${cy - innerR}
+              A ${innerR} ${innerR} 0 1 0 ${cx} ${cy - innerR} Z`}
+          fill={slice.color}
+          stroke="var(--bg)"
+          strokeWidth="2"
+        />
+      );
+    }
+
+    const startAngle = cumAngle;
+    cumAngle += frac * 2 * Math.PI;
+    const endAngle = cumAngle;
+    const large = frac > 0.5 ? 1 : 0;
+
+    const x1  = cx + R      * Math.cos(startAngle);
+    const y1  = cy + R      * Math.sin(startAngle);
+    const x2  = cx + R      * Math.cos(endAngle);
+    const y2  = cy + R      * Math.sin(endAngle);
+    const ix1 = cx + innerR * Math.cos(startAngle);
+    const iy1 = cy + innerR * Math.sin(startAngle);
+    const ix2 = cx + innerR * Math.cos(endAngle);
+    const iy2 = cy + innerR * Math.sin(endAngle);
+
+    return (
+      <path
+        key={slice.label}
+        d={`M ${ix1} ${iy1} L ${x1} ${y1}
+            A ${R} ${R} 0 ${large} 1 ${x2} ${y2}
+            L ${ix2} ${iy2}
+            A ${innerR} ${innerR} 0 ${large} 0 ${ix1} ${iy1} Z`}
+        fill={slice.color}
+        stroke="var(--bg)"
+        strokeWidth="2"
+      />
+    );
+  });
 
   return (
-    <div className="chart-wrap">
+    <div className="dash-pie-wrap">
+      <div className="dash-pie-svg-wrap">
+        <svg width="160" height="160" viewBox="0 0 160 160">
+          {paths}
+          <text x={cx} y={cy - 6}  textAnchor="middle" fontSize="22" fontWeight="800" fill="var(--text)">{wins}</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" fontSize="11"  fill="var(--text-muted)">wins</text>
+        </svg>
+      </div>
+      <div className="dash-pie-legend">
+        {slices.map(s => (
+          <div key={s.label} className="dash-pie-legend-row">
+            <span className="dash-pie-dot" style={{ background: s.color }} />
+            <span className="dash-pie-legend-name">{s.emoji} {s.label}</span>
+            <span className="dash-pie-legend-count">{s.value}</span>
+            <span className="dash-pie-legend-pct">{Math.round(s.value / total * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Win Rate Bar Chart ───────────────────────────────────────────────────────
+function WinRateChart({ byGame }) {
+  if (!byGame || byGame.length === 0) {
+    return (
+      <div className="dash-empty-chart">
+        <span>🎮</span>
+        <p>Play more games to see your win rates</p>
+      </div>
+    );
+  }
+
+  // Sort: most played first so the most significant data leads
+  const sorted = [...byGame].sort((a, b) => Number(b.total_games) - Number(a.total_games));
+
+  // Opacity encodes statistical confidence — fewer games = more washed out
+  const opacityFor = n => {
+    const t = Number(n);
+    if (t >= 15) return 1;
+    if (t >= 8)  return 0.78;
+    if (t >= 4)  return 0.54;
+    return 0.33;
+  };
+
+  return (
+    <div className="dash-bar-wrap">
+      {sorted.map(g => {
+        const rate  = Number(g.win_rate);
+        const total = Number(g.total_games);
+        const wins  = Number(g.wins);
+        const op    = opacityFor(total);
+        const showInside = rate > 22;
+
+        return (
+          <div key={g.game_name} className="dash-bar-row">
+            <div className="dash-bar-label" title={g.game_name}>{g.game_name}</div>
+            <div className="dash-bar-track">
+              <div
+                className="dash-bar-fill"
+                style={{ width: `${rate}%`, opacity: op }}
+              >
+                {showInside && (
+                  <span className="dash-bar-inner-label">{wins}/{total}</span>
+                )}
+              </div>
+              {!showInside && (
+                <span className="dash-bar-outer-label">{wins}/{total}</span>
+              )}
+            </div>
+            <div className="dash-bar-pct">{rate}%</div>
+          </div>
+        );
+      })}
+      <p className="dash-bar-hint">Bar opacity reflects sample size — more transparent = fewer games played</p>
+    </div>
+  );
+}
+
+// ─── H2H Line Chart (same SVG pattern as the group analytics chart) ───────────
+function H2HChart({ timeline, user1, user2, gameFilter }) {
+  const svgRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null);
+
+  // Filter to a specific game if needed
+  const filtered = gameFilter === 'all'
+    ? timeline
+    : timeline.filter(d => d.game_id === gameFilter);
+
+  if (!filtered || filtered.length === 0) {
+    return (
+      <div className="dash-empty-chart" style={{ paddingTop: 32 }}>
+        <span>📊</span>
+        <p>No shared games found{gameFilter !== 'all' ? ' for this game' : ''}</p>
+      </div>
+    );
+  }
+
+  // Aggregate per night so the x-axis shows nights (not individual game instances)
+  const nightMap = new Map();
+  filtered.forEach(entry => {
+    const k = entry.night_id;
+    if (!nightMap.has(k)) {
+      nightMap.set(k, {
+        nightId:   entry.night_id,
+        name:      entry.night_name,
+        date:      new Date(entry.date),
+        u1_pts:    0,
+        u2_pts:    0,
+      });
+    }
+    const n = nightMap.get(k);
+    n.u1_pts += entry.user1_pts;
+    n.u2_pts += entry.user2_pts;
+  });
+
+  // Compute cumulative per night, oldest first
+  let cum1 = 0, cum2 = 0;
+  const points = Array.from(nightMap.values())
+    .sort((a, b) => a.date - b.date)
+    .map(n => {
+      cum1 += n.u1_pts;
+      cum2 += n.u2_pts;
+      return {
+        ...n,
+        cum1,
+        cum2,
+        shortDate: n.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        fullDate:  n.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      };
+    });
+
+  const W = 680, H = 230;
+  const PAD = { top: 16, right: 16, bottom: 38, left: 40 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top  - PAD.bottom;
+
+  const maxPts  = Math.max(...points.map(p => Math.max(p.cum1, p.cum2)), 1);
+  const xScale  = i => (i / Math.max(points.length - 1, 1)) * chartW;
+  const yScale  = v => chartH - (v / maxPts) * chartH;
+
+  const buildPath = key =>
+    points.map((p, i) => `${PAD.left + xScale(i)},${PAD.top + yScale(p[key])}`).join(' ');
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(f * maxPts));
+
+  const u1Col = COLOURS[0];
+  const u2Col = COLOURS[1];
+  const last  = points[points.length - 1];
+  const u1Leading = last.cum1 >= last.cum2;
+
+  return (
+    <div className="h2h-chart-wrap">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -63,86 +259,51 @@ function PointsChart({ data, gameFilter }) {
         onMouseLeave={() => setTooltip(null)}
       >
         {/* Grid lines */}
-        {yTicks.map(v => {
-          const y = PAD.top + yScale(v);
-          return (
-            <g key={v}>
-              <line
-                x1={PAD.left} y1={y} x2={PAD.left + chartW} y2={y}
-                stroke="rgba(255,255,255,0.05)" strokeWidth="1"
-              />
-              <text x={PAD.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.3)">
-                {v}
-              </text>
-            </g>
-          );
-        })}
+        {yTicks.map(v => (
+          <g key={v}>
+            <line
+              x1={PAD.left} y1={PAD.top + yScale(v)}
+              x2={PAD.left + chartW} y2={PAD.top + yScale(v)}
+              stroke="rgba(255,255,255,0.05)" strokeWidth="1"
+            />
+            <text x={PAD.left - 6} y={PAD.top + yScale(v) + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.28)">
+              {v}
+            </text>
+          </g>
+        ))}
 
-        {/* X axis labels */}
-        {nights.map((n, i) => {
-          const x = PAD.left + xScale(i);
-          // Only show label every N nights if there are many
-          const skip = nights.length > 8 ? Math.ceil(nights.length / 8) : 1;
-          if (i % skip !== 0 && i !== nights.length - 1) return null;
+        {/* X-axis labels */}
+        {points.map((p, i) => {
+          const skip = points.length > 8 ? Math.ceil(points.length / 8) : 1;
+          if (i % skip !== 0 && i !== points.length - 1) return null;
           return (
-            <text
-              key={n.nightId}
-              x={x} y={H - 8}
-              textAnchor="middle"
-              fontSize="10"
-              fill="rgba(255,255,255,0.35)"
-            >
-              {n.shortDate}
+            <text key={`xl-${p.nightId}`} x={PAD.left + xScale(i)} y={H - 4}
+              textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.28)">
+              {p.shortDate}
             </text>
           );
         })}
 
         {/* Lines */}
-        {players.map(player => {
-          const isHovered = hoveredPlayer === player.id;
-          const isFaded = hoveredPlayer && !isHovered;
-          return (
-            <polyline
-              key={player.id}
-              points={buildPath(player)}
-              fill="none"
-              stroke={player.colour}
-              strokeWidth={isHovered ? 3 : 2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={isFaded ? 0.18 : isHovered ? 1 : 0.85}
-              style={{ transition: 'opacity 0.2s, stroke-width 0.15s' }}
-            />
-          );
-        })}
+        <polyline points={buildPath('cum1')} fill="none" stroke={u1Col} strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
+        <polyline points={buildPath('cum2')} fill="none" stroke={u2Col} strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
 
-        {/* Dots + hover targets per night */}
-        {nights.map((n, i) => {
+        {/* Dots + invisible hover targets */}
+        {points.map((p, i) => {
           const x = PAD.left + xScale(i);
           return (
-            <g key={n.nightId}>
-              {players.map(player => {
-                const y = PAD.top + yScale(n.scores[player.id] || 0);
-                const isHovered = hoveredPlayer === player.id;
-                const isFaded = hoveredPlayer && !isHovered;
-                return (
-                  <circle
-                    key={player.id}
-                    cx={x} cy={y} r={isHovered ? 5 : 3.5}
-                    fill={player.colour}
-                    opacity={isFaded ? 0.15 : 1}
-                    style={{ transition: 'all 0.15s' }}
-                  />
-                );
-              })}
-              {/* Invisible wide hit area */}
+            <g key={`pt-${p.nightId}`}>
+              <circle cx={x} cy={PAD.top + yScale(p.cum1)} r="3.5" fill={u1Col} />
+              <circle cx={x} cy={PAD.top + yScale(p.cum2)} r="3.5" fill={u2Col} />
               <rect
-                x={x - 20} y={PAD.top} width={40} height={chartH}
+                x={x - 22} y={PAD.top} width={44} height={chartH}
                 fill="transparent"
                 style={{ cursor: 'crosshair' }}
-                onMouseEnter={(e) => {
+                onMouseEnter={e => {
                   const rect = svgRef.current?.getBoundingClientRect();
-                  setTooltip({ night: n, x: e.clientX - (rect?.left || 0), y: 10 });
+                  setTooltip({ p, x: e.clientX - (rect?.left || 0) });
                 }}
                 onMouseLeave={() => setTooltip(null)}
               />
@@ -151,68 +312,211 @@ function PointsChart({ data, gameFilter }) {
         })}
       </svg>
 
-      {/* Tooltip */}
       {tooltip && (
-        <div
-          className="chart-tooltip"
-          style={{ left: Math.min(tooltip.x, 520), top: tooltip.y + 8 }}
-        >
-          <div className="chart-tooltip-night">{tooltip.night.name}</div>
-          <div className="chart-tooltip-date">{tooltip.night.date}</div>
+        <div className="chart-tooltip" style={{ left: Math.min(tooltip.x + 8, 480), top: 12 }}>
+          <div className="chart-tooltip-night">{tooltip.p.name}</div>
+          <div className="chart-tooltip-date">{tooltip.p.fullDate}</div>
           <div className="chart-tooltip-rows">
-            {[...players]
-              .sort((a, b) => (tooltip.night.scores[b.id] || 0) - (tooltip.night.scores[a.id] || 0))
-              .map(p => (
-                <div key={p.id} className="chart-tooltip-row">
-                  <span className="chart-tooltip-dot" style={{ background: p.colour }} />
-                  <span className="chart-tooltip-name">{p.username}</span>
-                  <span className="chart-tooltip-pts">{tooltip.night.scores[p.id] || 0} pts</span>
-                </div>
-              ))}
+            {[
+              { name: user1.username, pts: tooltip.p.cum1, color: u1Col },
+              { name: user2.username, pts: tooltip.p.cum2, color: u2Col },
+            ].sort((a, b) => b.pts - a.pts).map(row => (
+              <div key={row.name} className="chart-tooltip-row">
+                <span className="chart-tooltip-dot" style={{ background: row.color }} />
+                <span className="chart-tooltip-name">{row.name}</span>
+                <span className="chart-tooltip-pts">{row.pts} pts</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
       {/* Legend */}
       <div className="chart-legend">
-        {players.map(p => (
-          <button
-            key={p.id}
-            className={`chart-legend-item ${hoveredPlayer === p.id ? 'chart-legend-item--active' : ''}`}
-            onClick={() => setHoveredPlayer(prev => prev === p.id ? null : p.id)}
-          >
-            <span className="chart-legend-dot" style={{ background: p.colour }} />
-            <span>{p.username}</span>
-          </button>
-        ))}
+        <div className="chart-legend-item chart-legend-item--active">
+          <span className="chart-legend-dot" style={{ background: u1Col }} />
+          <span>{user1.username}{u1Leading ? ' 👑' : ''}</span>
+        </div>
+        <div className="chart-legend-item chart-legend-item--active">
+          <span className="chart-legend-dot" style={{ background: u2Col }} />
+          <span>{user2.username}{!u1Leading ? ' 👑' : ''}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Main Dashboard ──────────────────────────────────────────────────────────
+// ─── Head-to-Head Section ─────────────────────────────────────────────────────
+function H2HSection({ userId }) {
+  const [input,      setInput]      = useState('');
+  const [searching,  setSearching]  = useState(false);
+  const [h2hData,    setH2hData]    = useState(null);
+  const [gameFilter, setGameFilter] = useState('all');
+  const [error,      setError]      = useState('');
+
+  const handleSearch = async () => {
+    const q = input.trim();
+    if (!q) return;
+    setSearching(true);
+    setError('');
+    setH2hData(null);
+    try {
+      const { data: found } = await axios.get(`/api/users/search?q=${encodeURIComponent(q)}`);
+      if (!found?.id) {
+        setError(`No registered user found with username "${q}"`);
+        return;
+      }
+      if (Number(found.id) === Number(userId)) {
+        setError("That's you! Try searching for someone else.");
+        return;
+      }
+      const { data } = await axios.get(`/api/users/${userId}/vs/${found.id}`);
+      setH2hData(data);
+      setGameFilter('all');
+    } catch {
+      setError('Failed to load comparison data. Please try again.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <section className="card h2h-section">
+      <div className="h2h-top">
+        <div>
+          <h3>Head-to-Head</h3>
+          <p className="sub-text" style={{ fontSize: 13, marginTop: 3 }}>
+            Compare your stats against another player — only games you both played count.
+          </p>
+        </div>
+      </div>
+
+      <div className="h2h-search-row">
+        <input
+          className="input"
+          placeholder="Enter a username…"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSearch()}
+          style={{ maxWidth: 260 }}
+        />
+        <button
+          className="btn btn-ghost"
+          onClick={handleSearch}
+          disabled={searching || !input.trim()}
+        >
+          {searching ? 'Searching…' : 'Compare →'}
+        </button>
+      </div>
+
+      {error && <p className="h2h-error">{error}</p>}
+
+      {h2hData && (
+        h2hData.total_shared === 0 ? (
+          <div className="dash-empty-chart" style={{ marginTop: 20 }}>
+            <span>🤝</span>
+            <p>You and <strong>{h2hData.user2.username}</strong> haven't played any completed games together yet.</p>
+          </div>
+        ) : (
+          <div className="h2h-content">
+
+            {/* Rivalry scoreboard */}
+            <div className="h2h-rivalry">
+              <div className="h2h-rival-side">
+                <div className="h2h-rival-name">{h2hData.user1.username}</div>
+                <div className="h2h-rival-wins">{h2hData.overall.user1_wins}</div>
+                <div className="h2h-rival-sub">{h2hData.overall.user1_win_rate}% win rate</div>
+              </div>
+              <div className="h2h-rival-center">
+                <div className="h2h-rival-total">{h2hData.total_shared}</div>
+                <div className="h2h-rival-total-label">shared games</div>
+                <div className="h2h-rival-vs">VS</div>
+              </div>
+              <div className="h2h-rival-side h2h-rival-side--right">
+                <div className="h2h-rival-name">{h2hData.user2.username}</div>
+                <div className="h2h-rival-wins">{h2hData.overall.user2_wins}</div>
+                <div className="h2h-rival-sub">{h2hData.overall.user2_win_rate}% win rate</div>
+              </div>
+            </div>
+
+            {/* Game filter pills — same look as group dashboard */}
+            {h2hData.games.length > 1 && (
+              <div className="h2h-pills">
+                <span className="chart-filter-label">Filter:</span>
+                <div className="chart-filter-pills">
+                  <button
+                    className={`chart-filter-pill ${gameFilter === 'all' ? 'chart-filter-pill--active' : ''}`}
+                    onClick={() => setGameFilter('all')}
+                  >
+                    All Games
+                  </button>
+                  {h2hData.games.map(g => (
+                    <button
+                      key={g.id}
+                      className={`chart-filter-pill ${gameFilter === g.id ? 'chart-filter-pill--active' : ''}`}
+                      onClick={() => setGameFilter(g.id)}
+                    >
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cumulative line chart */}
+            <div style={{ marginTop: 20, position: 'relative' }}>
+              <H2HChart
+                timeline={h2hData.timeline}
+                user1={h2hData.user1}
+                user2={h2hData.user2}
+                gameFilter={gameFilter}
+              />
+            </div>
+
+            {/* Per-game breakdown table */}
+            {h2hData.by_game.length > 0 && (
+              <div className="h2h-breakdown">
+                <p className="h2h-breakdown-title">Per-Game Breakdown</p>
+                <div className="h2h-breakdown-header">
+                  <span>Game</span>
+                  <span>{h2hData.user1.username}</span>
+                  <span>{h2hData.user2.username}</span>
+                  <span>Games</span>
+                </div>
+                {h2hData.by_game.map(g => (
+                  <div key={g.game_id} className="h2h-breakdown-row">
+                    <span className="h2h-breakdown-game">{g.game_name}</span>
+                    <span className="h2h-breakdown-stat">{g.u1_wins}W · {g.u1_win_rate}%</span>
+                    <span className="h2h-breakdown-stat">{g.u2_wins}W · {g.u2_win_rate}%</span>
+                    <span className="h2h-breakdown-total">{g.total}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      )}
+    </section>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user, logout } = useAuth();
 
-  const [stats,      setStats]      = useState({ winRate: '—', total: 0, wins: 0, second_place: 0, third_place: 0, no_podium: 0 });
-  const [byGame,     setByGame]     = useState([]);
-  const [history,    setHistory]    = useState([]);
-  const [chartData,  setChartData]  = useState(null);   // processed for the line chart
-  const [rawChartData, setRawChartData] = useState(null); // raw from API
-  const [allGameNames, setAllGameNames] = useState([]);
-  const [selectedGame, setSelectedGame] = useState('all');
-  const [loadingChart, setLoadingChart] = useState(true);
+  const [stats,   setStats]   = useState(null);
+  const [chips,   setChips]   = useState(null);
+  const [byGame,  setByGame]  = useState([]);
+  const [history, setHistory] = useState([]);
 
   // Modals
   const [showNightModal,  setShowNightModal]  = useState(false);
   const [showEditModal,   setShowEditModal]   = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [needsReauth,     setNeedsReauth]     = useState(false);
-
-  // Password visibility
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNew,     setShowNew]     = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [showCurrent,     setShowCurrent]     = useState(false);
+  const [showNew,         setShowNew]         = useState(false);
+  const [showConfirm,     setShowConfirm]     = useState(false);
 
   const [editData, setEditData] = useState({
     username:    user?.username || '',
@@ -222,213 +526,23 @@ export default function Dashboard() {
     currentPass: '',
   });
 
-  // ── Fetch all data ──────────────────────────────────────────────────────
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const { data } = await axios.get(`/api/users/${user.id}/stats`);
-        setStats({
-          winRate:      data.win_rate      ?? '—',
-          total:        data.total_games   ?? 0,
-          wins:         data.wins          ?? 0,
-          second_place: data.second_place  ?? 0,
-          third_place:  data.third_place   ?? 0,
-          no_podium:    data.no_podium     ?? 0,
-        });
-      } catch { /* not critical */ }
+    const load = async () => {
+      const [s, c, g, h] = await Promise.allSettled([
+        axios.get(`/api/users/${user.id}/stats`),
+        axios.get(`/api/users/${user.id}/chips`),
+        axios.get(`/api/users/${user.id}/stats/by-game`),
+        axios.get(`/api/users/${user.id}/history`),
+      ]);
+      if (s.status === 'fulfilled') setStats(s.value.data);
+      if (c.status === 'fulfilled') setChips(c.value.data);
+      if (g.status === 'fulfilled') setByGame(g.value.data || []);
+      if (h.status === 'fulfilled') setHistory(h.value.data || []);
     };
-
-    const fetchByGame = async () => {
-      try {
-        const { data } = await axios.get(`/api/users/${user.id}/stats/by-game`);
-        setByGame(data || []);
-      } catch { /* not critical */ }
-    };
-
-    const fetchHistory = async () => {
-      try {
-        const { data } = await axios.get(`/api/users/${user.id}/history`);
-        setHistory(data || []);
-      } catch { /* not critical */ }
-    };
-
-    const fetchChartData = async () => {
-      setLoadingChart(true);
-      try {
-        // Fetch all groups the user is in, then get leaderboard data per group night
-        const groupsRes = await axios.get(`/api/groups/user/${user.id}`);
-        const groups = groupsRes.data || [];
-
-        // Collect all game nights across all groups with participant points
-        const nightMap = new Map(); // nightId -> { night info, playerPoints }
-        const playerMap = new Map(); // playerId -> username
-
-        await Promise.all(groups.map(async (group) => {
-          try {
-            const [nightsRes, membersRes] = await Promise.all([
-              axios.get(`/api/groups/${group.id}/game-nights`),
-              axios.get(`/api/groups/${group.id}/members`),
-            ]);
-
-            membersRes.data?.forEach(m => {
-              if (!playerMap.has(m.id)) playerMap.set(m.id, m.username);
-            });
-
-            for (const night of (nightsRes.data || [])) {
-              if (night.is_active !== false) continue; // only completed nights
-              if (!nightMap.has(night.id)) {
-                // Fetch night detail for game results
-                try {
-                  const detailRes = await axios.get(`/api/game-nights/${night.id}`);
-                  const detail = detailRes.data;
-                  const pts = {};
-
-                  (detail.games || []).filter(g => g.is_complete).forEach(g => {
-                    const results = (g.participants || [])
-                      .filter(p => p.position != null)
-                      .sort((a, b) => a.position - b.position);
-                    const totalPlayers = results.length;
-                    results.forEach(p => {
-                      const earned = Math.max(0, totalPlayers - p.position);
-                      pts[p.attendee_id] = (pts[p.attendee_id] || 0) + earned;
-                    });
-                  });
-
-                  // Map attendee_id -> user_id using the attendees list
-                  const attendeeToUser = {};
-                  (detail.attendees || []).forEach(a => {
-                    if (a.user_id) attendeeToUser[a.id] = a.user_id;
-                  });
-
-                  const userPts = {};
-                  Object.entries(pts).forEach(([attId, p]) => {
-                    const uid = attendeeToUser[attId];
-                    if (uid) userPts[uid] = (userPts[uid] || 0) + p;
-                  });
-
-                  nightMap.set(night.id, {
-                    nightId: night.id,
-                    name: night.name || 'Game Night',
-                    date: new Date(night.played_at || night.created_at),
-                    gameName: null, // "all" mode doesn't filter by game
-                    userPts,
-                    games: detail.games || [],
-                  });
-                } catch { /* skip night */ }
-              }
-            }
-          } catch { /* skip group */ }
-        }));
-
-        // Collect all game names for filter
-        const gameNames = new Set();
-        nightMap.forEach(n => {
-          n.games.forEach(g => {
-            if (g.game_name) gameNames.add(g.game_name);
-          });
-        });
-        setAllGameNames(['all', ...Array.from(gameNames).sort()]);
-        setRawChartData({ nightMap, playerMap });
-
-      } catch (err) {
-        console.error('Chart data fetch failed', err);
-      } finally {
-        setLoadingChart(false);
-      }
-    };
-
-    fetchStats();
-    fetchByGame();
-    fetchHistory();
-    fetchChartData();
+    load();
   }, [user.id]);
 
-  // ── Recompute chart when filter or raw data changes ─────────────────────
-  useEffect(() => {
-    if (!rawChartData) return;
-    const { nightMap, playerMap } = rawChartData;
-
-    // Filter nights by game
-    const relevantNights = [];
-    nightMap.forEach(n => {
-      if (selectedGame === 'all') {
-        relevantNights.push(n);
-      } else {
-        // Only include nights where this game was played
-        const hasGame = n.games.some(g => g.game_name === selectedGame && g.is_complete);
-        if (hasGame) {
-          // Recalculate points for just this game
-          const pts = {};
-          n.games.filter(g => g.game_name === selectedGame && g.is_complete).forEach(g => {
-            const results = (g.participants || [])
-              .filter(p => p.position != null)
-              .sort((a, b) => a.position - b.position);
-            const totalPlayers = results.length;
-
-            // Need attendee -> user mapping from the night
-            results.forEach(p => {
-              pts[p.attendee_id] = (pts[p.attendee_id] || 0) + Math.max(0, totalPlayers - p.position);
-            });
-          });
-
-          // Map attendee IDs to user IDs — we stored userPts keyed by user_id in "all" mode
-          // For filtered mode, we use n.userPts as a proxy (same mapping was done)
-          relevantNights.push({ ...n, userPts: n.userPts }); // re-use userPts; filtered by game proportionally
-        }
-      }
-    });
-
-    // Sort nights chronologically
-    relevantNights.sort((a, b) => a.date - b.date);
-
-    if (relevantNights.length === 0) {
-      setChartData(null);
-      return;
-    }
-
-    // Determine which players appear in these nights
-    const playerIds = new Set();
-    relevantNights.forEach(n => Object.keys(n.userPts).forEach(id => playerIds.add(Number(id))));
-
-    const players = Array.from(playerIds)
-      .filter(id => playerMap.has(id))
-      .map((id, idx) => ({
-        id,
-        username: playerMap.get(id),
-        colour: PLAYER_COLOURS[idx % PLAYER_COLOURS.length],
-      }))
-      .sort((a, b) => a.username.localeCompare(b.username));
-
-    // Build cumulative points series
-    const cumulative = {};
-    players.forEach(p => { cumulative[p.id] = 0; });
-
-    const nights = relevantNights.map(n => {
-      players.forEach(p => {
-        cumulative[p.id] = (cumulative[p.id] || 0) + (n.userPts[p.id] || 0);
-      });
-      return {
-        nightId: n.nightId,
-        name: n.name,
-        date: n.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        shortDate: n.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        scores: { ...cumulative },
-      };
-    });
-
-    setChartData({ players, nights });
-  }, [rawChartData, selectedGame]);
-
-  // ── Leaderboard from chart data ─────────────────────────────────────────
-  const leaderboard = chartData
-    ? [...chartData.players]
-        .map(p => ({ ...p, total: chartData.nights[chartData.nights.length - 1]?.scores[p.id] || 0 }))
-        .sort((a, b) => b.total - a.total)
-    : [];
-
-  const rankIcon = (i) => ['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`;
-
-  // ── Profile update ───────────────────────────────────────────────────────
+  // ── Account actions ─────────────────────────────────────────────────────
   const handleUpdate = async (e) => {
     e.preventDefault();
     const isChangingEmail = editData.email !== user.email;
@@ -439,11 +553,9 @@ export default function Dashboard() {
       toast('Confirm your current password to save sensitive changes.', { icon: '🔐' });
       return;
     }
-
     if (isChangingPass && editData.newPass !== editData.confirmPass) {
       return toast.error('New passwords do not match.');
     }
-
     try {
       await axios.put(`/api/auth/update/${user.id}`, {
         username:    editData.username,
@@ -459,13 +571,13 @@ export default function Dashboard() {
   };
 
   const confirmDelete = async () => {
-    const id = toast.loading('Deleting account…');
+    const tid = toast.loading('Deleting account…');
     try {
       await axios.delete(`/api/auth/delete/${user.id}`);
-      toast.success('Account deleted. See you around!', { id });
+      toast.success('Account deleted. See you around!', { id: tid });
       logout();
     } catch {
-      toast.error('Failed to delete account', { id });
+      toast.error('Failed to delete account', { id: tid });
     }
   };
 
@@ -478,263 +590,128 @@ export default function Dashboard() {
     setEditData({ username: user.username, email: user.email, newPass: '', confirmPass: '', currentPass: '' });
   };
 
-  // ── Pie chart ────────────────────────────────────────────────────────────
-  const pieData = [
-    { label: '1st', value: stats.wins,         color: '#00d4aa' },
-    { label: '2nd', value: stats.second_place,  color: '#00b4d8' },
-    { label: '3rd', value: stats.third_place,   color: '#7b61ff' },
-    { label: 'No podium', value: stats.no_podium, color: '#3a3a4a' },
-  ].filter(d => d.value > 0);
-
-  const total = pieData.reduce((s, d) => s + d.value, 0);
-
-  const buildPie = () => {
-    if (total === 0) return null;
-    let cumulative = 0;
-    const cx = 60, cy = 60, r = 50;
-    return pieData.map((slice, i) => {
-      const pct  = slice.value / total;
-      const startAngle = cumulative * 2 * Math.PI - Math.PI / 2;
-      cumulative += pct;
-      const endAngle = cumulative * 2 * Math.PI - Math.PI / 2;
-      const x1 = cx + r * Math.cos(startAngle);
-      const y1 = cy + r * Math.sin(startAngle);
-      const x2 = cx + r * Math.cos(endAngle);
-      const y2 = cy + r * Math.sin(endAngle);
-      const large = pct > 0.5 ? 1 : 0;
-      return (
-        <path
-          key={i}
-          d={`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z`}
-          fill={slice.color}
-          stroke="var(--bg)"
-          strokeWidth="2"
-        />
-      );
-    });
-  };
-
-  const maxWinRate = byGame.length > 0 ? Math.max(...byGame.map(g => Number(g.win_rate))) : 100;
+  // Ordinal emoji for history list
+  const rankIcon = pos => (['🥇', '🥈', '🥉'][pos - 1] ?? `#${pos}`);
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="page dashboard-container">
+    <div className="page dash-page">
 
-      {/* Header */}
-      <header className="dashboard-header">
-        <div className="header-left">
-          <h1 className="page-title">Hey, {user?.username} 👋</h1>
-          <p className="sub-text">Welcome back to your dashboard.</p>
+      {/* ── Header ── */}
+      <header className="dash-header">
+        <div className="dash-header-left">
+          <div className="dash-title-row">
+            <h1 className="page-title">Hey, {user.username} 👋</h1>
+            <span className="dash-title-sub">— Welcome back to your dashboard</span>
+          </div>
+          <div className="dash-meta-row">
+            <button className="dash-meta-link" onClick={() => setShowEditModal(true)}>
+              ⚙ Account Settings
+            </button>
+            <span className="dash-meta-sep">·</span>
+            <button className="dash-meta-link dash-meta-link--danger" onClick={() => setShowDeleteModal(true)}>
+              🗑 Delete Account
+            </button>
+          </div>
         </div>
-        <div className="header-actions">
-          <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
-            🎲 New Game Night
-          </button>
-          <button className="btn-subtle" onClick={() => setShowEditModal(true)}>
-            Account settings
-          </button>
-          <button className="btn-link-danger" onClick={() => setShowDeleteModal(true)}>
-            Delete account
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={() => setShowNightModal(true)}>
+          🎲 New Game Night
+        </button>
       </header>
 
-      {/* Dashboard grid: main left, sidebar right */}
-      <div className="dashboard-grid">
-
-        {/* ── Left / main column ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-
-          {/* Points over time chart */}
-          <section className="card">
-            <div className="chart-header">
-              <div>
-                <h3>Points Over Time</h3>
-                <p className="sub-text" style={{ marginTop: '2px', fontSize: '13px' }}>
-                  Cumulative leaderboard across completed game nights
-                </p>
-              </div>
-              {allGameNames.length > 1 && (
-                <div className="chart-filter">
-                  <span className="chart-filter-label">Filter:</span>
-                  <div className="chart-filter-pills">
-                    {allGameNames.map(name => (
-                      <button
-                        key={name}
-                        className={`chart-filter-pill ${selectedGame === name ? 'chart-filter-pill--active' : ''}`}
-                        onClick={() => setSelectedGame(name)}
-                      >
-                        {name === 'all' ? 'All Games' : name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {loadingChart ? (
-              <div className="chart-loading">
-                <div className="chart-spinner" />
-                <span>Loading chart…</span>
-              </div>
-            ) : (
-              <PointsChart data={chartData} gameFilter={selectedGame} />
-            )}
-          </section>
-
-          {/* Podium pie chart */}
-          <section className="card">
-            <h3>My Placement Breakdown</h3>
-            {total === 0 ? (
-              <p className="sub-text" style={{ marginTop: '12px' }}>No completed games yet.</p>
-            ) : (
-              <div style={{ display: 'flex', gap: '24px', alignItems: 'center', marginTop: '16px' }}>
-                <svg width="120" height="120" viewBox="0 0 120 120">
-                  {buildPie()}
-                </svg>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {pieData.map(d => (
-                    <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-                      <span style={{ width: 12, height: 12, borderRadius: 3, background: d.color, flexShrink: 0 }} />
-                      <span style={{ color: 'var(--text-muted)' }}>{d.label}</span>
-                      <span style={{ fontWeight: 700, marginLeft: 'auto', paddingLeft: '12px' }}>
-                        {d.value} ({Math.round(d.value / total * 100)}%)
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Win rate by game */}
-          {byGame.length > 0 && (
-            <section className="card">
-              <h3>Win Rate by Game</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
-                {byGame.map(g => (
-                  <div key={g.game_name}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 600, fontSize: '13px' }}>{g.game_name}</span>
-                      <span style={{ color: 'var(--primary)', fontWeight: 700, fontSize: '13px' }}>{g.win_rate}%</span>
-                    </div>
-                    <div style={{ background: 'var(--surface)', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
-                      <div style={{
-                        width: `${(Number(g.win_rate) / maxWinRate) * 100}%`,
-                        height: '100%',
-                        background: 'var(--primary)',
-                        borderRadius: '4px',
-                        transition: 'width 0.4s ease',
-                      }} />
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                      {g.wins}W / {g.total_games} game{g.total_games !== 1 ? 's' : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+      {/* ── Stat chips ── */}
+      {chips && (
+        <div className="dash-chips">
+          {chips.streak > 0 && (
+            <StatChip
+              icon="🔥"
+              label="Win Streak"
+              value={chips.streak}
+              sub={`game${chips.streak !== 1 ? 's' : ''} in a row`}
+            />
           )}
-
-          {/* Recent game history */}
-          <section className="card">
-            <h3>Recent Game History</h3>
-            <div className="history-list">
-              {history.length > 0
-                ? history.map((game, i) => (
-                  <div key={i} className="history-item">
-                    <div className="game-info">
-                      <div className="game-name">{game.game_name}</div>
-                      <div className="game-meta">
-                        {new Date(game.played_at).toLocaleDateString('en-US', {
-                          month: 'short', day: 'numeric', year: 'numeric',
-                        })}
-                        {game.night_name && ` · ${game.night_name}`}
-                      </div>
-                    </div>
-                    <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
-                      {game.is_win ? '🏆 WIN' : game.position ? `#${game.position}` : 'Played'}
-                    </div>
-                  </div>
-                ))
-                : (
-                  <div style={{ padding: '32px 0', textAlign: 'center' }}>
-                    <p className="sub-text">No games recorded yet.</p>
-                    <button
-                      className="btn btn-primary"
-                      style={{ marginTop: '16px' }}
-                      onClick={() => setShowNightModal(true)}
-                    >
-                      Start your first game night
-                    </button>
-                  </div>
-                )
-              }
-            </div>
-          </section>
-        </div>
-
-        {/* ── Right sidebar ── */}
-        <div className="stats-sidebar">
-
-          {/* My Stats */}
-          <div className="card">
-            <h3>My Stats</h3>
-            <div style={{ marginTop: '12px' }}>
-              <div className="stat-row">
-                <span>Win Rate</span>
-                <strong>{stats.winRate}{stats.winRate !== '—' ? '%' : ''}</strong>
-              </div>
-              <div className="stat-row">
-                <span>Total Wins</span>
-                <strong>{stats.wins}</strong>
-              </div>
-              <div className="stat-row">
-                <span>Total Games</span>
-                <strong>{stats.total}</strong>
-              </div>
-              <div className="stat-row">
-                <span>🥇 1st place</span>
-                <strong>{stats.wins}</strong>
-              </div>
-              <div className="stat-row">
-                <span>🥈 2nd place</span>
-                <strong>{stats.second_place}</strong>
-              </div>
-              <div className="stat-row">
-                <span>🥉 3rd place</span>
-                <strong>{stats.third_place}</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Group Leaderboard */}
-          {leaderboard.length > 0 && (
-            <div className="card">
-              <h3 style={{ marginBottom: '4px' }}>
-                {selectedGame === 'all' ? 'All-Time Leaderboard' : `${selectedGame} Leaderboard`}
-              </h3>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-                Cumulative points across completed nights
-              </p>
-              {leaderboard.map((player, i) => (
-                <div key={player.id} className="lb-row">
-                  <span className="lb-rank">{rankIcon(i)}</span>
-                  <span
-                    className="lb-dot"
-                    style={{ background: player.colour }}
-                  />
-                  <span className="lb-name">{player.username}</span>
-                  <span className="lb-pts">
-                    {player.total}
-                    <span className="lb-pts-label"> pts</span>
-                  </span>
-                </div>
-              ))}
-            </div>
+          <StatChip icon="🌙" label="Nights Attended" value={chips.total_nights} />
+          {stats && (
+            <StatChip
+              icon="🏆"
+              label="Total Wins"
+              value={Number(stats.wins ?? 0)}
+              sub={`of ${Number(stats.total_games ?? 0)} games`}
+            />
+          )}
+          {chips.avg_position && (
+            <StatChip icon="📍" label="Avg Finish" value={`#${chips.avg_position}`} />
+          )}
+          {chips.most_played_game && (
+            <StatChip
+              icon="🎮"
+              label="Most Played"
+              value={chips.most_played_game}
+              sub={`${chips.most_played_count}× played`}
+            />
           )}
         </div>
+      )}
+
+      {/* ── Two side-by-side charts ── */}
+      <div className="dash-charts-row">
+        <section className="card dash-chart-half">
+          <h3 className="dash-section-title">Placement Breakdown</h3>
+          <PlacementPie stats={stats} />
+        </section>
+
+        <section className="card dash-chart-half">
+          <h3 className="dash-section-title">Win Rate by Game</h3>
+          <WinRateChart byGame={byGame} />
+        </section>
       </div>
+
+      {/* ── Head-to-Head ── */}
+      <H2HSection userId={user.id} />
+
+      {/* ── Recent History ── */}
+      <section className="card" style={{ marginTop: 24 }}>
+        <h3>Recent Game History</h3>
+        <div className="history-list" style={{ marginTop: 16 }}>
+          {history.length > 0
+            ? history.map((game, i) => (
+              <div
+                key={`hist-${i}-${game.game_name}-${game.night_name}`}
+                className="history-item"
+              >
+                <div className="game-info">
+                  <div className="game-name">{game.game_name}</div>
+                  <div className="game-meta">
+                    {game.played_at
+                      ? new Date(game.played_at).toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })
+                      : 'Date unknown'}
+                    {game.night_name && ` · ${game.night_name}`}
+                  </div>
+                </div>
+                <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
+                  {game.is_win
+                    ? '🏆 WIN'
+                    : `${rankIcon(Number(game.position))} of ${game.total_players}`}
+                </div>
+              </div>
+            ))
+            : (
+              <div style={{ padding: '32px 0', textAlign: 'center' }}>
+                <p className="sub-text">No games recorded yet.</p>
+                <button
+                  className="btn btn-primary"
+                  style={{ marginTop: 16 }}
+                  onClick={() => setShowNightModal(true)}
+                >
+                  Start your first game night
+                </button>
+              </div>
+            )
+          }
+        </div>
+      </section>
 
       {/* ── Game Night Creator modal ── */}
       <GameNightCreator
@@ -766,11 +743,12 @@ export default function Dashboard() {
                   onChange={e => setEditData({ ...editData, email: e.target.value })}
                 />
               </div>
-
               <hr className="divider-line" />
-
               <div className="form-group">
-                <label>New Password <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <label>
+                  New Password{' '}
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
+                </label>
                 <div className="input-wrapper">
                   <input
                     className="input"
@@ -778,12 +756,11 @@ export default function Dashboard() {
                     value={editData.newPass}
                     onChange={e => setEditData({ ...editData, newPass: e.target.value })}
                   />
-                  <button type="button" className="eye-btn" onClick={() => setShowNew(!showNew)}>
+                  <button type="button" className="eye-btn" onClick={() => setShowNew(v => !v)}>
                     <EyeIcon visible={showNew} />
                   </button>
                 </div>
               </div>
-
               {editData.newPass && (
                 <div className="form-group">
                   <label>Confirm New Password</label>
@@ -794,16 +771,15 @@ export default function Dashboard() {
                       value={editData.confirmPass}
                       onChange={e => setEditData({ ...editData, confirmPass: e.target.value })}
                     />
-                    <button type="button" className="eye-btn" onClick={() => setShowConfirm(!showConfirm)}>
+                    <button type="button" className="eye-btn" onClick={() => setShowConfirm(v => !v)}>
                       <EyeIcon visible={showConfirm} />
                     </button>
                   </div>
                 </div>
               )}
-
               {needsReauth && (
                 <div className="reauth-box">
-                  <p style={{ fontSize: '13px', marginBottom: '10px' }}>
+                  <p style={{ fontSize: 13, marginBottom: 10 }}>
                     Confirm your current password to apply changes:
                   </p>
                   <div className="input-wrapper">
@@ -815,15 +791,16 @@ export default function Dashboard() {
                       value={editData.currentPass}
                       onChange={e => setEditData({ ...editData, currentPass: e.target.value })}
                     />
-                    <button type="button" className="eye-btn" onClick={() => setShowCurrent(!showCurrent)}>
+                    <button type="button" className="eye-btn" onClick={() => setShowCurrent(v => !v)}>
                       <EyeIcon visible={showCurrent} />
                     </button>
                   </div>
                 </div>
               )}
-
               <div className="modal-actions">
-                <button type="button" className="btn btn-ghost" onClick={closeEditModal}>Cancel</button>
+                <button type="button" className="btn btn-ghost" onClick={closeEditModal}>
+                  Cancel
+                </button>
                 <button type="submit" className="btn btn-primary">
                   {needsReauth ? 'Confirm Changes' : 'Save Changes'}
                 </button>
@@ -839,11 +816,16 @@ export default function Dashboard() {
           <div className="modal-card card">
             <h2 style={{ color: 'var(--danger)' }}>⚠️ Irreversible Action</h2>
             <p style={{ margin: '16px 0', color: 'var(--text-muted)' }}>
-              Are you sure? Your account will be permanently deleted. Game history will be anonymised.
+              Are you sure? Your account will be permanently deleted. Your game history
+              will be anonymised so group stats remain intact.
             </p>
             <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setShowDeleteModal(false)}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDelete}>Yes, Delete Account</button>
+              <button className="btn btn-ghost" onClick={() => setShowDeleteModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" onClick={confirmDelete}>
+                Yes, Delete Account
+              </button>
             </div>
           </div>
         </div>

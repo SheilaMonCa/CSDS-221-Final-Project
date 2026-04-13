@@ -41,8 +41,6 @@ export default function GameNightDetail() {
             .filter(p => p.position != null)
             .sort((a, b) => a.position - b.position);
 
-          // Compute totals from rounds for cumulative/scores games
-          // rounds rows: { attendee_id, score, round_number, ... }
           const roundTotals = {};
           if (g.rounds?.length > 0) {
             g.rounds.forEach(row => {
@@ -81,11 +79,38 @@ export default function GameNightDetail() {
     load();
   }, [nightId]);
 
-  const isNightActive = night?.is_active !== false; // treat null/undefined as active
+  const isNightActive = night?.is_active !== false;
+
+  // Snapshot of incomplete widgets — drives modal copy and cleanup logic
+  const incompleteWidgets = widgets.filter(w => !w.completed);
+  const incompleteCount   = incompleteWidgets.length;
+  const hasIncomplete     = incompleteCount > 0;
+  const gameWord          = incompleteCount === 1 ? 'game' : 'games';
 
   const handleEndNight = async () => {
     setEndingNight(true);
     try {
+      // 1. Delete any incomplete games that already have a DB record
+      const toDelete     = incompleteWidgets.filter(w => w.gameId !== null);
+      let   deletesFailed = 0;
+
+      for (const w of toDelete) {
+        try {
+          await axios.delete(`/api/game-nights/${nightId}/games/${w.gameId}`);
+        } catch {
+          deletesFailed++;
+          console.warn(`Failed to delete incomplete game ${w.gameId}`);
+        }
+      }
+
+      if (deletesFailed > 0) {
+        toast(`⚠️ ${deletesFailed} ${deletesFailed === 1 ? 'game' : 'games'} couldn't be deleted — continuing anyway`, { icon: '⚠️' });
+      }
+
+      // 2. Remove all incomplete widgets from local state (DB-backed + unsaved new ones)
+      setWidgets(prev => prev.filter(w => w.completed));
+
+      // 3. Lock the night
       await axios.put(`/api/game-nights/${nightId}/end`);
       setNight(prev => ({ ...prev, is_active: false }));
       setShowEndConfirm(false);
@@ -116,35 +141,28 @@ export default function GameNightDetail() {
     setWidgets(prev =>
       prev.map(w => {
         if (w.id === widgetId) {
-          return { 
-            ...w, 
-            // 1. Swap temporary ID for DB ID so 'null' error disappears
-            id: `db-${serverData.id}`, 
-            gameId: serverData.id,
-            // 2. Use the results we passed up
-            results: serverData.results,
-            completed: true 
+          return {
+            ...w,
+            id:        `db-${serverData.id}`,
+            gameId:    serverData.id,
+            results:   serverData.results,
+            completed: true,
           };
         }
         return w;
       })
     );
-
   }, []);
 
   const handleRemove = useCallback((widgetId) => {
     setWidgets(prev => prev.filter(w => w.id !== widgetId));
   }, []);
 
-  // ── Targeted sync: fetch a single game from the DB and update its widget ──
-  // Called by GameWidget after any mutating API call (configure / mark done).
-  // This is the fix for stale IDs and empty edit views without a full reload.
   const syncWidget = useCallback(async (tempWidgetId, gamePlayedId) => {
     if (!gamePlayedId) return;
     try {
       const { data } = await axios.get(`/api/game-nights/${nightId}/games/${gamePlayedId}`);
 
-      // Re-use existing attendees already in state — no extra fetch needed
       setWidgets(prev => {
         return prev.map(w => {
           if (w.id !== tempWidgetId && w.id !== `db-${gamePlayedId}`) return w;
@@ -170,33 +188,27 @@ export default function GameNightDetail() {
 
           return {
             ...w,
-            id:              `db-${gamePlayedId}`,
-            gameId:          gamePlayedId,
-            name:            data.game_name,
-            type:            data.game_type === 'winner_order' ? 'positions' : data.game_type === 'scores' ? 'scores' : 'cumulative',
-            higherIsBetter:  data.higher_is_better ?? true,
-            players:         (data.participants || []).map(p => ({
+            id:               `db-${gamePlayedId}`,
+            gameId:           gamePlayedId,
+            name:             data.game_name,
+            type:             data.game_type === 'winner_order' ? 'positions' : data.game_type === 'scores' ? 'scores' : 'cumulative',
+            higherIsBetter:   data.higher_is_better ?? true,
+            players:          (data.participants || []).map(p => ({
               id:   p.attendee_id,
               name: p.name || 'Unknown',
               type: p.user_id ? 'user' : 'guest',
             })),
             completedResults: data.is_complete ? completedResults : w.completedResults,
             completed:        data.is_complete,
-            // Only overwrite rounds from DB if the game is complete — while in progress
-            // the DB rounds are empty and we must keep the widget's local round state.
             rounds:           data.is_complete ? (data.rounds || []) : w.rounds,
           };
         });
       });
     } catch {
-      // Sync failure is non-fatal — the widget still works from local state.
-      // The user can refresh if they see stale data.
       console.warn(`syncWidget failed for gamePlayedId=${gamePlayedId}`);
     }
   }, [nightId]);
 
-  // Derive points from completed widgets — automatically stays in sync with
-  // any widget change (complete, delete, reopen) without manual setPointsMap calls.
   const pointsMap = useMemo(() => {
     const pts = {};
     widgets.forEach(w => {
@@ -266,17 +278,54 @@ export default function GameNightDetail() {
       {/* End night confirmation modal */}
       {showEndConfirm && (
         <div className="gnd-modal-overlay" onClick={() => setShowEndConfirm(false)}>
-          <div className="card" style={{ maxWidth: 420, width: '100%', padding: '28px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px' }}>End Game Night?</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
-              This will lock all scores and results. No further changes can be made. Any in-progress games will be left incomplete.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button className="btn btn-ghost" onClick={() => setShowEndConfirm(false)}>Cancel</button>
-              <button className="btn btn-danger" onClick={handleEndNight} disabled={endingNight}>
-                {endingNight ? 'Ending…' : 'Yes, End Night'}
-              </button>
-            </div>
+          <div
+            className="card"
+            style={{ maxWidth: 420, width: '100%', padding: '28px' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {hasIncomplete ? (
+              <>
+                <h3 style={{ marginBottom: '8px' }}>
+                  You have {incompleteCount} incomplete {gameWord}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
+                  You have {incompleteCount} incomplete {gameWord}. Would you like to delete{' '}
+                  {incompleteCount === 1 ? 'it' : 'them'} and end the night, or go back and finish{' '}
+                  {incompleteCount === 1 ? 'it' : 'them'}?
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button className="btn btn-ghost" onClick={() => setShowEndConfirm(false)}>
+                    Go back &amp; finish
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={handleEndNight}
+                    disabled={endingNight}
+                  >
+                    {endingNight
+                      ? 'Ending…'
+                      : `Delete ${incompleteCount === 1 ? 'game' : `${incompleteCount} games`} & end night`}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ marginBottom: '8px' }}>End Game Night?</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
+                  This will lock all scores and results. No further changes can be made.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button className="btn btn-ghost" onClick={() => setShowEndConfirm(false)}>Cancel</button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={handleEndNight}
+                    disabled={endingNight}
+                  >
+                    {endingNight ? 'Ending…' : 'Yes, End Night'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -23,6 +23,7 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
   const [personInput, setPersonInput] = useState('');
   const [loadingGroup, setLoadingGroup] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [pendingGuest, setPendingGuest] = useState(null); // { name } — awaiting confirm-as-guest modal
 
   // Reset and optionally prefill whenever modal opens
   useEffect(() => {
@@ -87,36 +88,41 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
     if (!raw) return;
     setPersonInput('');
 
-    try {
-      const { data } = await axios.get(`/api/users/search?q=${encodeURIComponent(raw)}`);
-      if (data?.id) {
-        const alreadyIn = pills.some(p => p.userId === data.id);
-        if (alreadyIn) {
-          toast('Already in the list!', { icon: '👀' });
-          return;
-        }
-        setPills(prev => [...prev, {
-          id: `user-${data.id}`,
-          name: data.username,
-          type: 'user',
-          userId: data.id,
-          absent: false,
-        }]);
-        toast.success(`${data.username} added`);
+    const { data } = await axios.get(`/api/users/search?q=${encodeURIComponent(raw)}`);
+
+    if (data?.id) {
+      // Found a real registered user
+      const alreadyIn = pills.some(p => p.userId === data.id);
+      if (alreadyIn) {
+        toast('Already in the list!', { icon: '👀' });
         return;
       }
-    } catch {
-      // Not found as user — fall through to guest
+      setPills(prev => [...prev, {
+        id: `user-${data.id}`,
+        name: data.username,
+        type: 'user',
+        userId: data.id,
+        absent: false,
+      }]);
+      toast.success(`${data.username} added`);
+      return;
     }
 
+    // Not found — show confirmation modal instead of silently adding as guest
+    setPendingGuest({ name: raw });
+  };
+
+  const confirmAddAsGuest = () => {
+    if (!pendingGuest) return;
     setPills(prev => [...prev, {
       id: `guest-${Date.now()}-${Math.random()}`,
-      name: raw,
+      name: pendingGuest.name,
       type: 'guest',
       userId: null,
       absent: false,
     }]);
-    toast.success(`${raw} added as guest 👤`);
+    toast.success(`${pendingGuest.name} added as guest 👤`);
+    setPendingGuest(null);
   };
 
   const toggleAbsent = (id) =>
@@ -297,6 +303,32 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
           </button>
         </div>
       </div>
+
+      {/* User-not-found confirmation modal */}
+      {pendingGuest && (
+        <div className="gnc-overlay" style={{ zIndex: 1100 }} onClick={() => setPendingGuest(null)}>
+          <div className="gnc-modal card" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div className="gnc-header">
+              <h3>User not found 🤔</h3>
+              <button className="gnc-close" onClick={() => setPendingGuest(null)}>✕</button>
+            </div>
+            <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>
+              No registered account found for <strong style={{ color: 'var(--text)' }}>"{pendingGuest.name}"</strong>.
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 24 }}>
+              Did you mistype the username? If not, you can still add them as a <strong style={{ color: 'var(--text)' }}>guest</strong> — they'll appear in the night's stats but won't be able to view their own dashboard.
+            </p>
+            <div className="gnc-footer" style={{ marginTop: 0, paddingTop: 0, border: 'none' }}>
+              <button className="btn btn-ghost" onClick={() => setPendingGuest(null)}>
+                Cancel — I'll fix the name
+              </button>
+              <button className="btn btn-primary" onClick={confirmAddAsGuest}>
+                Add as Guest
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
