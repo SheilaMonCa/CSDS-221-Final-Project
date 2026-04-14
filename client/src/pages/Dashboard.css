@@ -136,10 +136,6 @@
   .dash-charts-row { grid-template-columns: 1fr; }
 }
 
-.dash-chart-half {
-  /* inherits card styles */
-}
-
 .dash-section-title {
   font-size: 16px;
   font-weight: 700;
@@ -459,9 +455,7 @@
   font-size: 12px;
 }
 
-/* ── Recent History (kept from old Dashboard) ── */
-.history-list { }
-
+/* ── Recent History ── */
 .history-item {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
@@ -695,7 +689,7 @@
   color: var(--text);
 }
 
-/* ── Modal / Forms (kept from old Dashboard) ── */
+/* ── Modal / Forms ── */
 .modal-overlay {
   position: fixed;
   inset: 0;

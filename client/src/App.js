@@ -41,7 +41,7 @@ export default function App() {
           <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
           <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
 
-          {/* ✅ Unified game night detail route — all roads lead here */}
+          {/* Unified game night detail route — all roads lead here */}
           <Route path="/game-nights/:nightId" element={<ProtectedRoute><GameNightDetail /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/dashboard" />} />

@@ -192,56 +192,6 @@
   margin-bottom: 10px;
 }
 
-/* Drag & Drop */
-.gw-dnd {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
-.gw-dnd-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 16px;
-  cursor: grab;
-  user-select: none;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-}
-
-.gw-dnd-card:hover {
-  border-color: rgba(0, 212, 170, 0.4);
-}
-
-.gw-dnd-card:active {
-  cursor: grabbing;
-  border-color: var(--primary);
-  box-shadow: 0 4px 20px rgba(0, 212, 170, 0.18);
-  transform: scale(1.01);
-}
-
-.gw-dnd-rank {
-  min-width: 28px;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.gw-dnd-handle {
-  color: var(--text-muted);
-  font-size: 20px;
-  cursor: grab;
-}
-
-.gw-dnd-name {
-  font-size: 14px;
-  font-weight: 600;
-  flex: 1;
-}
-
 .gw-guest-tag {
   background: rgba(0, 180, 216, 0.15);
   color: var(--secondary);
@@ -404,9 +354,6 @@
   font-size: 14px;
 }
 .gw-summary-row:last-child { border-bottom: none; }
-
-.gw-summary-rank { font-size: 20px; min-width: 32px; }
-
 .gw-summary-score {
   color: var(--primary);
   font-size: 14px;
@@ -467,13 +414,6 @@
 .gw-summary-name { flex: 1; font-size: 14px; font-weight: 500; }
 .gw-summary-score { color: var(--primary); font-weight: 700; font-size: 13px; }
 
-/* ── DnD: prevent child spans from intercepting drag events ── */
-.gw-dnd-card * {
-  pointer-events: none;
-}
-.gw-dnd-card--dragging {
-  opacity: 0.4;
-}
 
 /* Autocomplete suggestions dropdown */
 .gw-suggestions {

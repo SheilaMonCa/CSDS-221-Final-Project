@@ -149,7 +149,7 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
     }
     setStarting(true);
     try {
-      // ✅ FIX: pass group_ids so this night appears in the group's game-nights list
+      // pass group_ids so this night appears in the group's game-nights list
       const groupIds = prefillGroupId ? [parseInt(prefillGroupId, 10)] : [];
 
       const { data } = await api.post('/api/game-nights', {

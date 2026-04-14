@@ -610,7 +610,7 @@ export default function Dashboard() {
   const [historyDetails, setHistoryDetails] = useState({});
   const [showNightModal, setShowNightModal] = useState(false);
 
-  // ✅ Single state drives both account modals — null | 'edit' | 'delete'
+  // Single state drives both account modals — null | 'edit' | 'delete'
   const [accountModal, setAccountModal] = useState(null);
 
   useEffect(() => {
@@ -796,7 +796,7 @@ export default function Dashboard() {
                         <>
                           <div className="history-results">
                             {detail.participants.map((p, pi) => {
-                              // ✅ UUID string comparison — no Number() casting
+                              // UUID string comparison — no Number() casting
                               const isMe = p.user_id === user.id;
                               const pos = Number(p.position);
                               let score = null;

@@ -10,7 +10,6 @@ export function AuthProvider({ children }) {
 
   // Takes the raw Supabase auth user, fetches the matching public.users row,
   // and returns a merged object so user.username / user.email / user.id
-  // work everywhere in the app exactly as before — nothing else needs changing.
   const buildUser = async (authUser) => {
     if (!authUser) return null;
     try {
@@ -55,7 +54,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => supabase.auth.signOut();
 
-  // Use this after server-side account deletion — the Auth user is already gone
+  // Uses this after server-side account deletion — the Auth user is already gone
   // so calling signOut() would 403. Instead just wipe local session state.
   const logoutLocal = async () => {
     await supabase.auth.signOut({ scope: 'local' });
