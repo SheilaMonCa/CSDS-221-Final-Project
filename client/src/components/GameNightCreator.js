@@ -32,7 +32,13 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
         month: 'short', day: 'numeric',
       })}`;
       setNightName(defaultName);
-      setPills([]);
+      setPills([{
+        id: `user-${user.id}`,
+        name: user.username,
+        type: 'user',
+        userId: user.id,
+        absent: false,
+      }]);
       setGroupInput('');
       setPersonInput('');
 
