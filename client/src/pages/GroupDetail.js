@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api'
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import GameNightCreator from '../components/GameNightCreator';
@@ -63,9 +63,9 @@ export default function GroupDetail() {
     const fetchCore = async () => {
       try {
         const [groupRes, membersRes, nightsRes] = await Promise.all([
-          axios.get(`/api/groups/${id}`),
-          axios.get(`/api/groups/${id}/members`),
-          axios.get(`/api/groups/${id}/game-nights`),
+          api.get(`/api/groups/${id}`),
+          api.get(`/api/groups/${id}/members`),
+          api.get(`/api/groups/${id}/game-nights`),
         ]);
         setGroup(groupRes.data);
         setMembers(membersRes.data || []);
@@ -85,8 +85,8 @@ export default function GroupDetail() {
       try {
         const qs = selectedGame ? `?game_id=${selectedGame}` : '';
         const [analyticsRes, lbRes] = await Promise.all([
-          axios.get(`/api/groups/${id}/analytics${qs}`),
-          axios.get(`/api/groups/${id}/leaderboard${qs}`),
+          api.get(`/api/groups/${id}/analytics${qs}`),
+          api.get(`/api/groups/${id}/leaderboard${qs}`),
         ]);
         setAnalytics(analyticsRes.data);
         setLeaderboard(lbRes.data || []);
@@ -112,7 +112,7 @@ export default function GroupDetail() {
     if (!addUsername.trim()) return;
     setAddingMember(true);
     try {
-      const { data } = await axios.post(`/api/groups/${id}/members`, { username: addUsername.trim() });
+      const { data } = await api.post(`/api/groups/${id}/members`, { username: addUsername.trim() });
       if (data.found === false) {
         toast.error(`"${addUsername}" doesn't have an account. Only registered users can join groups.`);
         return;
@@ -120,7 +120,7 @@ export default function GroupDetail() {
       toast.success(`${addUsername} added to group!`);
       setAddUsername('');
       setShowAddModal(false);
-      const res = await axios.get(`/api/groups/${id}/members`);
+      const res = await api.get(`/api/groups/${id}/members`);
       setMembers(res.data || []);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to add member');
@@ -132,7 +132,7 @@ export default function GroupDetail() {
   const handleLeaveGroup = async () => {
     setLeavingGroup(true);
     try {
-      await axios.delete(`/api/groups/${id}/members/${user.id}`);
+      await api.delete(`/api/groups/${id}/members/${user.id}`);
       toast.success('You left the group.');
       navigate('/groups');
     } catch (err) {

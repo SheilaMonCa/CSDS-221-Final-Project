@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -64,7 +64,7 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
   const fetchAndAddGroup = async (groupId) => {
     setLoadingGroup(true);
     try {
-      const { data } = await axios.get(`/api/groups/${groupId}/members`);
+      const { data } = await api.get(`/api/groups/${groupId}/members`);
       mergeMembersIntoPills(data);
     } catch {
       toast.error("Couldn't load that group");
@@ -88,7 +88,7 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
     if (!raw) return;
     setPersonInput('');
 
-    const { data } = await axios.get(`/api/users/search?q=${encodeURIComponent(raw)}`);
+    const { data } = await api.get(`/api/users/search?q=${encodeURIComponent(raw)}`);
 
     if (data?.id) {
       // Found a real registered user
@@ -146,7 +146,7 @@ export default function GameNightCreator({ isOpen, onClose, prefillGroupId = nul
       // ✅ FIX: pass group_ids so this night appears in the group's game-nights list
       const groupIds = prefillGroupId ? [parseInt(prefillGroupId, 10)] : [];
 
-      const { data } = await axios.post('/api/game-nights', {
+      const { data } = await api.post('/api/game-nights', {
         name: nightName.trim(),
         created_by: user.id,
         attendees: present.map(p =>

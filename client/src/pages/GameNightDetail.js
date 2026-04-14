@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api'
 import toast from 'react-hot-toast';
 import GameWidget from '../components/GameWidget';
 import './GameNightDetail.css';
@@ -20,7 +20,7 @@ export default function GameNightDetail() {
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await axios.get(`/api/game-nights/${nightId}`);
+        const { data } = await api.get(`/api/game-nights/${nightId}`);
         setNight(data.night);
 
         const normalised = (data.attendees || []).map(a => ({
@@ -96,7 +96,7 @@ export default function GameNightDetail() {
 
       for (const w of toDelete) {
         try {
-          await axios.delete(`/api/game-nights/${nightId}/games/${w.gameId}`);
+          await api.delete(`/api/game-nights/${nightId}/games/${w.gameId}`);
         } catch {
           deletesFailed++;
           console.warn(`Failed to delete incomplete game ${w.gameId}`);
@@ -111,7 +111,7 @@ export default function GameNightDetail() {
       setWidgets(prev => prev.filter(w => w.completed));
 
       // 3. Lock the night
-      await axios.put(`/api/game-nights/${nightId}/end`);
+      await api.put(`/api/game-nights/${nightId}/end`);
       setNight(prev => ({ ...prev, is_active: false }));
       setShowEndConfirm(false);
       toast.success('Game night ended — results are now locked 🔒');
@@ -161,7 +161,7 @@ export default function GameNightDetail() {
   const syncWidget = useCallback(async (tempWidgetId, gamePlayedId) => {
     if (!gamePlayedId) return;
     try {
-      const { data } = await axios.get(`/api/game-nights/${nightId}/games/${gamePlayedId}`);
+      const { data } = await api.get(`/api/game-nights/${nightId}/games/${gamePlayedId}`);
 
       setWidgets(prev => {
         return prev.map(w => {

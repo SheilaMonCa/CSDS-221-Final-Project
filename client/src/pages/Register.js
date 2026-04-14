@@ -1,30 +1,39 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import toast from 'react-hot-toast'; // Import toaster
-import { useAuth } from '../context/AuthContext';
-import EyeIcon from '../components/EyeIcon'; // Import modular icon
+import { supabase } from '../supabaseClient';
+import toast from 'react-hot-toast';
+import EyeIcon from '../components/EyeIcon';
 
 export default function Register() {
-  const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [form, setForm]                 = useState({ username: '', email: '', password: '', confirm: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [showConfirm, setShowConfirm]   = useState(false);
+  const [loading, setLoading]           = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      const { data } = await axios.post('/api/auth/register', form);
-      login(data.token, data.user);
-      toast.success("Account created! Let's get started."); // Success toast
-      navigate('/dashboard');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Registration failed'); // Error toast
-    } finally {
-      setLoading(false);
+    if (form.password !== form.confirm) {
+      toast.error('Passwords do not match');
+      return;
     }
+    if (form.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signUp({
+      email:    form.email,
+      password: form.password,
+      options:  { data: { username: form.username } },
+    });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Account created! Let's get started.");
+      navigate('/dashboard');
+    }
+    setLoading(false);
   };
 
   return (
@@ -52,26 +61,48 @@ export default function Register() {
             <input className="input" type="email" placeholder="you@example.com"
               value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
           </div>
-          
+
           <div className="form-group">
             <label>Password</label>
-            <div className="input-wrapper"> {/* Centered eye logic */}
-              <input 
-                className="input" 
-                type={showPassword ? "text" : "password"} 
+            <div className="input-wrapper">
+              <input
+                className="input"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
-                value={form.password} 
-                onChange={e => setForm({ ...form, password: e.target.value })} 
-                required 
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                required
               />
-              <button 
-                type="button" 
-                className="eye-btn" 
-                onClick={() => setShowPassword(!showPassword)}
-              >
+              <button type="button" className="eye-btn" onClick={() => setShowPassword(!showPassword)}>
                 <EyeIcon visible={showPassword} />
               </button>
             </div>
+          </div>
+
+          <div className="form-group">
+            <label>Confirm Password</label>
+            <div className="input-wrapper">
+              <input
+                className="input"
+                type={showConfirm ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={form.confirm}
+                onChange={e => setForm({ ...form, confirm: e.target.value })}
+                required
+                style={{
+                  borderColor: form.confirm && form.confirm !== form.password
+                    ? 'var(--danger)' : undefined,
+                }}
+              />
+              <button type="button" className="eye-btn" onClick={() => setShowConfirm(!showConfirm)}>
+                <EyeIcon visible={showConfirm} />
+              </button>
+            </div>
+            {form.confirm && form.confirm !== form.password && (
+              <span style={{ fontSize: '12px', color: 'var(--danger)', marginTop: '4px' }}>
+                Passwords do not match
+              </span>
+            )}
           </div>
 
           <button className="btn btn-primary" type="submit" disabled={loading}

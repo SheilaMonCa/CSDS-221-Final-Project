@@ -1,30 +1,30 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import toast from 'react-hot-toast'; // Import toaster
-import { useAuth } from '../context/AuthContext';
-import EyeIcon from '../components/EyeIcon'; // Import modular icon
+import { supabase } from '../supabaseClient';
+import toast from 'react-hot-toast';
+import EyeIcon from '../components/EyeIcon';
 
 export default function Login() {
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm]                 = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [loading, setLoading]           = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      const { data } = await axios.post('/api/auth/login', form);
-      login(data.token, data.user);
-      toast.success(`Welcome back, ${data.user.username}!`); // Success toast
+    const { error } = await supabase.auth.signInWithPassword({
+      email:    form.email,
+      password: form.password,
+    });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      // username comes from AuthContext after it fetches public.users
+      toast.success(`Welcome back!`);
       navigate('/dashboard');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed'); // Error toast
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
@@ -47,23 +47,19 @@ export default function Login() {
             <input className="input" type="email" placeholder="you@example.com"
               value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
           </div>
-          
+
           <div className="form-group">
             <label>Password</label>
-            <div className="input-wrapper"> {/* Centered eye logic */}
-              <input 
-                className="input" 
-                type={showPassword ? "text" : "password"} 
+            <div className="input-wrapper">
+              <input
+                className="input"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
-                value={form.password} 
-                onChange={e => setForm({ ...form, password: e.target.value })} 
-                required 
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                required
               />
-              <button 
-                type="button" 
-                className="eye-btn" 
-                onClick={() => setShowPassword(!showPassword)}
-              >
+              <button type="button" className="eye-btn" onClick={() => setShowPassword(!showPassword)}>
                 <EyeIcon visible={showPassword} />
               </button>
             </div>

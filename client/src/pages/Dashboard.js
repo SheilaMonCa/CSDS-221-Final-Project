@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import api from '../api'
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import EyeIcon from '../components/EyeIcon';
 import GameNightCreator from '../components/GameNightCreator';
+import AccountModal from '../components/AccountModal';
 import './Dashboard.css';
 
 const COLOURS = ['#00d4aa', '#00b4d8', '#7b61ff', '#ff6b6b', '#ffd166', '#06d6a0'];
@@ -48,14 +48,12 @@ function PlacementPie({ stats }) {
     { label: 'No Podium', value: rest,   color: '#2e2e40', emoji: '📊' },
   ].filter(s => s.value > 0);
 
-  // SVG donut — handle 100% single-slice edge case
   const cx = 80, cy = 80, R = 62, innerR = 40;
   let cumAngle = -Math.PI / 2;
 
   const paths = slices.map(slice => {
     const frac = slice.value / total;
 
-    // Full circle: draw two 180° arcs so the SVG arc command works
     if (frac >= 0.9999) {
       return (
         <path
@@ -105,7 +103,7 @@ function PlacementPie({ stats }) {
         <svg width="160" height="160" viewBox="0 0 160 160">
           {paths}
           <text x={cx} y={cy - 6}  textAnchor="middle" fontSize="22" fontWeight="800" fill="var(--text)">{wins}</text>
-          <text x={cx} y={cy + 12} textAnchor="middle" fontSize="11"  fill="var(--text-muted)">wins</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" fontSize="11" fill="var(--text-muted)">wins</text>
         </svg>
       </div>
       <div className="dash-pie-legend">
@@ -133,10 +131,8 @@ function WinRateChart({ byGame }) {
     );
   }
 
-  // Sort: most played first so the most significant data leads
   const sorted = [...byGame].sort((a, b) => Number(b.total_games) - Number(a.total_games));
 
-  // Opacity encodes statistical confidence — fewer games = more washed out
   const opacityFor = n => {
     const t = Number(n);
     if (t >= 15) return 1;
@@ -158,17 +154,10 @@ function WinRateChart({ byGame }) {
           <div key={g.game_name} className="dash-bar-row">
             <div className="dash-bar-label" title={g.game_name}>{g.game_name}</div>
             <div className="dash-bar-track">
-              <div
-                className="dash-bar-fill"
-                style={{ width: `${rate}%`, opacity: op }}
-              >
-                {showInside && (
-                  <span className="dash-bar-inner-label">{wins}/{total}</span>
-                )}
+              <div className="dash-bar-fill" style={{ width: `${rate}%`, opacity: op }}>
+                {showInside && <span className="dash-bar-inner-label">{wins}/{total}</span>}
               </div>
-              {!showInside && (
-                <span className="dash-bar-outer-label">{wins}/{total}</span>
-              )}
+              {!showInside && <span className="dash-bar-outer-label">{wins}/{total}</span>}
             </div>
             <div className="dash-bar-pct">{rate}%</div>
           </div>
@@ -179,12 +168,11 @@ function WinRateChart({ byGame }) {
   );
 }
 
-// ─── H2H Line Chart (same SVG pattern as the group analytics chart) ───────────
+// ─── H2H Line Chart ───────────────────────────────────────────────────────────
 function H2HChart({ timeline, user1, user2, gameFilter }) {
   const svgRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
 
-  // Filter to a specific game if needed
   const filtered = gameFilter === 'all'
     ? timeline
     : timeline.filter(d => d.game_id === gameFilter);
@@ -198,25 +186,17 @@ function H2HChart({ timeline, user1, user2, gameFilter }) {
     );
   }
 
-  // Aggregate per night so the x-axis shows nights (not individual game instances)
   const nightMap = new Map();
   filtered.forEach(entry => {
     const k = entry.night_id;
     if (!nightMap.has(k)) {
-      nightMap.set(k, {
-        nightId:   entry.night_id,
-        name:      entry.night_name,
-        date:      new Date(entry.date),
-        u1_pts:    0,
-        u2_pts:    0,
-      });
+      nightMap.set(k, { nightId: entry.night_id, name: entry.night_name, date: new Date(entry.date), u1_pts: 0, u2_pts: 0 });
     }
     const n = nightMap.get(k);
     n.u1_pts += entry.user1_pts;
     n.u2_pts += entry.user2_pts;
   });
 
-  // Compute cumulative per night, oldest first
   let cum1 = 0, cum2 = 0;
   const points = Array.from(nightMap.values())
     .sort((a, b) => a.date - b.date)
@@ -224,9 +204,7 @@ function H2HChart({ timeline, user1, user2, gameFilter }) {
       cum1 += n.u1_pts;
       cum2 += n.u2_pts;
       return {
-        ...n,
-        cum1,
-        cum2,
+        ...n, cum1, cum2,
         shortDate: n.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         fullDate:  n.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       };
@@ -236,16 +214,11 @@ function H2HChart({ timeline, user1, user2, gameFilter }) {
   const PAD = { top: 16, right: 16, bottom: 38, left: 40 };
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top  - PAD.bottom;
-
-  const maxPts  = Math.max(...points.map(p => Math.max(p.cum1, p.cum2)), 1);
-  const xScale  = i => (i / Math.max(points.length - 1, 1)) * chartW;
-  const yScale  = v => chartH - (v / maxPts) * chartH;
-
-  const buildPath = key =>
-    points.map((p, i) => `${PAD.left + xScale(i)},${PAD.top + yScale(p[key])}`).join(' ');
-
+  const maxPts = Math.max(...points.map(p => Math.max(p.cum1, p.cum2)), 1);
+  const xScale = i => (i / Math.max(points.length - 1, 1)) * chartW;
+  const yScale = v => chartH - (v / maxPts) * chartH;
+  const buildPath = key => points.map((p, i) => `${PAD.left + xScale(i)},${PAD.top + yScale(p[key])}`).join(' ');
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(f * maxPts));
-
   const u1Col = COLOURS[0];
   const u2Col = COLOURS[1];
   const last  = points[points.length - 1];
@@ -253,66 +226,34 @@ function H2HChart({ timeline, user1, user2, gameFilter }) {
 
   return (
     <div className="h2h-chart-wrap">
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
-        className="chart-svg"
-        onMouseLeave={() => setTooltip(null)}
-      >
-        {/* Grid lines */}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="chart-svg" onMouseLeave={() => setTooltip(null)}>
         {yTicks.map(v => (
           <g key={v}>
-            <line
-              x1={PAD.left} y1={PAD.top + yScale(v)}
-              x2={PAD.left + chartW} y2={PAD.top + yScale(v)}
-              stroke="rgba(255,255,255,0.05)" strokeWidth="1"
-            />
-            <text x={PAD.left - 6} y={PAD.top + yScale(v) + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.28)">
-              {v}
-            </text>
+            <line x1={PAD.left} y1={PAD.top + yScale(v)} x2={PAD.left + chartW} y2={PAD.top + yScale(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+            <text x={PAD.left - 6} y={PAD.top + yScale(v) + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.28)">{v}</text>
           </g>
         ))}
-
-        {/* X-axis labels */}
         {points.map((p, i) => {
           const skip = points.length > 8 ? Math.ceil(points.length / 8) : 1;
           if (i % skip !== 0 && i !== points.length - 1) return null;
-          return (
-            <text key={`xl-${p.nightId}`} x={PAD.left + xScale(i)} y={H - 4}
-              textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.28)">
-              {p.shortDate}
-            </text>
-          );
+          return <text key={`xl-${p.nightId}`} x={PAD.left + xScale(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.28)">{p.shortDate}</text>;
         })}
-
-        {/* Lines */}
-        <polyline points={buildPath('cum1')} fill="none" stroke={u1Col} strokeWidth="2.5"
-          strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
-        <polyline points={buildPath('cum2')} fill="none" stroke={u2Col} strokeWidth="2.5"
-          strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
-
-        {/* Dots + invisible hover targets */}
+        <polyline points={buildPath('cum1')} fill="none" stroke={u1Col} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
+        <polyline points={buildPath('cum2')} fill="none" stroke={u2Col} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
         {points.map((p, i) => {
           const x = PAD.left + xScale(i);
           return (
             <g key={`pt-${p.nightId}`}>
               <circle cx={x} cy={PAD.top + yScale(p.cum1)} r="3.5" fill={u1Col} />
               <circle cx={x} cy={PAD.top + yScale(p.cum2)} r="3.5" fill={u2Col} />
-              <rect
-                x={x - 22} y={PAD.top} width={44} height={chartH}
-                fill="transparent"
-                style={{ cursor: 'crosshair' }}
-                onMouseEnter={e => {
-                  const rect = svgRef.current?.getBoundingClientRect();
-                  setTooltip({ p, x: e.clientX - (rect?.left || 0) });
-                }}
+              <rect x={x - 22} y={PAD.top} width={44} height={chartH} fill="transparent" style={{ cursor: 'crosshair' }}
+                onMouseEnter={e => { const rect = svgRef.current?.getBoundingClientRect(); setTooltip({ p, x: e.clientX - (rect?.left || 0) }); }}
                 onMouseLeave={() => setTooltip(null)}
               />
             </g>
           );
         })}
       </svg>
-
       {tooltip && (
         <div className="chart-tooltip" style={{ left: Math.min(tooltip.x + 8, 480), top: 12 }}>
           <div className="chart-tooltip-night">{tooltip.p.name}</div>
@@ -331,8 +272,6 @@ function H2HChart({ timeline, user1, user2, gameFilter }) {
           </div>
         </div>
       )}
-
-      {/* Legend */}
       <div className="chart-legend">
         <div className="chart-legend-item chart-legend-item--active">
           <span className="chart-legend-dot" style={{ background: u1Col }} />
@@ -362,16 +301,17 @@ function H2HSection({ userId }) {
     setError('');
     setH2hData(null);
     try {
-      const { data: found } = await axios.get(`/api/users/search?q=${encodeURIComponent(q)}`);
+      const { data: found } = await api.get(`/api/users/search?q=${encodeURIComponent(q)}`);
       if (!found?.id) {
         setError(`No registered user found with username "${q}"`);
         return;
       }
-      if (Number(found.id) === Number(userId)) {
+      // UUID string comparison — no Number() casting needed
+      if (found.id === userId) {
         setError("That's you! Try searching for someone else.");
         return;
       }
-      const { data } = await axios.get(`/api/users/${userId}/vs/${found.id}`);
+      const { data } = await api.get(`/api/users/${userId}/vs/${found.id}`);
       setH2hData(data);
       setGameFilter('all');
     } catch {
@@ -391,7 +331,6 @@ function H2HSection({ userId }) {
           </p>
         </div>
       </div>
-
       <div className="h2h-search-row">
         <input
           className="input"
@@ -401,17 +340,11 @@ function H2HSection({ userId }) {
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           style={{ maxWidth: 260 }}
         />
-        <button
-          className="btn btn-ghost"
-          onClick={handleSearch}
-          disabled={searching || !input.trim()}
-        >
+        <button className="btn btn-ghost" onClick={handleSearch} disabled={searching || !input.trim()}>
           {searching ? 'Searching…' : 'Compare →'}
         </button>
       </div>
-
       {error && <p className="h2h-error">{error}</p>}
-
       {h2hData && (
         h2hData.total_shared === 0 ? (
           <div className="dash-empty-chart" style={{ marginTop: 20 }}>
@@ -420,8 +353,6 @@ function H2HSection({ userId }) {
           </div>
         ) : (
           <div className="h2h-content">
-
-            {/* Rivalry scoreboard */}
             <div className="h2h-rivalry">
               <div className="h2h-rival-side">
                 <div className="h2h-rival-name">{h2hData.user1.username}</div>
@@ -439,42 +370,24 @@ function H2HSection({ userId }) {
                 <div className="h2h-rival-sub">{h2hData.overall.user2_win_rate}% win rate</div>
               </div>
             </div>
-
-            {/* Game filter pills — same look as group dashboard */}
             {h2hData.games.length > 1 && (
               <div className="h2h-pills">
                 <span className="chart-filter-label">Filter:</span>
                 <div className="chart-filter-pills">
-                  <button
-                    className={`chart-filter-pill ${gameFilter === 'all' ? 'chart-filter-pill--active' : ''}`}
-                    onClick={() => setGameFilter('all')}
-                  >
+                  <button className={`chart-filter-pill ${gameFilter === 'all' ? 'chart-filter-pill--active' : ''}`} onClick={() => setGameFilter('all')}>
                     All Games
                   </button>
                   {h2hData.games.map(g => (
-                    <button
-                      key={g.id}
-                      className={`chart-filter-pill ${gameFilter === g.id ? 'chart-filter-pill--active' : ''}`}
-                      onClick={() => setGameFilter(g.id)}
-                    >
+                    <button key={g.id} className={`chart-filter-pill ${gameFilter === g.id ? 'chart-filter-pill--active' : ''}`} onClick={() => setGameFilter(g.id)}>
                       {g.name}
                     </button>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Cumulative line chart */}
             <div style={{ marginTop: 20, position: 'relative' }}>
-              <H2HChart
-                timeline={h2hData.timeline}
-                user1={h2hData.user1}
-                user2={h2hData.user2}
-                gameFilter={gameFilter}
-              />
+              <H2HChart timeline={h2hData.timeline} user1={h2hData.user1} user2={h2hData.user2} gameFilter={gameFilter} />
             </div>
-
-            {/* Per-game breakdown table */}
             {h2hData.by_game.length > 0 && (
               <div className="h2h-breakdown">
                 <p className="h2h-breakdown-title">Per-Game Breakdown</p>
@@ -503,40 +416,27 @@ function H2HSection({ userId }) {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [stats,   setStats]   = useState(null);
-  const [chips,   setChips]   = useState(null);
-  const [byGame,  setByGame]  = useState([]);
-  const [history, setHistory] = useState([]);
+  const [stats,           setStats]           = useState(null);
+  const [chips,           setChips]           = useState(null);
+  const [byGame,          setByGame]          = useState([]);
+  const [history,         setHistory]         = useState([]);
   const [expandedHistory, setExpandedHistory] = useState(null);
-  const [historyDetails, setHistoryDetails] = useState({}); // gamesPlayedId -> detail data
-
-  // Modals
+  const [historyDetails,  setHistoryDetails]  = useState({});
   const [showNightModal,  setShowNightModal]  = useState(false);
-  const [showEditModal,   setShowEditModal]   = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [needsReauth,     setNeedsReauth]     = useState(false);
-  const [showCurrent,     setShowCurrent]     = useState(false);
-  const [showNew,         setShowNew]         = useState(false);
-  const [showConfirm,     setShowConfirm]     = useState(false);
 
-  const [editData, setEditData] = useState({
-    username:    user?.username || '',
-    email:       user?.email    || '',
-    newPass:     '',
-    confirmPass: '',
-    currentPass: '',
-  });
+  // ✅ Single state drives both account modals — null | 'edit' | 'delete'
+  const [accountModal, setAccountModal] = useState(null);
 
   useEffect(() => {
     const load = async () => {
       const [s, c, g, h] = await Promise.allSettled([
-        axios.get(`/api/users/${user.id}/stats`),
-        axios.get(`/api/users/${user.id}/chips`),
-        axios.get(`/api/users/${user.id}/stats/by-game`),
-        axios.get(`/api/users/${user.id}/history`),
+        api.get(`/api/users/${user.id}/stats`),
+        api.get(`/api/users/${user.id}/chips`),
+        api.get(`/api/users/${user.id}/stats/by-game`),
+        api.get(`/api/users/${user.id}/history`),
       ]);
       if (s.status === 'fulfilled') setStats(s.value.data);
       if (c.status === 'fulfilled') setChips(c.value.data);
@@ -546,75 +446,22 @@ export default function Dashboard() {
     load();
   }, [user.id]);
 
-  // ── Account actions ─────────────────────────────────────────────────────
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    const isChangingEmail = editData.email !== user.email;
-    const isChangingPass  = editData.newPass !== '';
-
-    if ((isChangingEmail || isChangingPass) && !needsReauth) {
-      setNeedsReauth(true);
-      toast('Confirm your current password to save sensitive changes.', { icon: '🔐' });
-      return;
-    }
-    if (isChangingPass && editData.newPass !== editData.confirmPass) {
-      return toast.error('New passwords do not match.');
-    }
-    try {
-      await axios.put(`/api/auth/update/${user.id}`, {
-        username:    editData.username,
-        email:       editData.email,
-        newPass:     editData.newPass,
-        currentPass: editData.currentPass,
-      });
-      toast.success('Profile updated!');
-      closeEditModal();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Update failed.');
-    }
-  };
-
-  const confirmDelete = async () => {
-    const tid = toast.loading('Deleting account…');
-    try {
-      await axios.delete(`/api/auth/delete/${user.id}`);
-      toast.success('Account deleted. See you around!', { id: tid });
-      logout();
-    } catch {
-      toast.error('Failed to delete account', { id: tid });
-    }
-  };
-
-  const closeEditModal = () => {
-    setShowEditModal(false);
-    setNeedsReauth(false);
-    setShowCurrent(false);
-    setShowNew(false);
-    setShowConfirm(false);
-    setEditData({ username: user.username, email: user.email, newPass: '', confirmPass: '', currentPass: '' });
-  };
-
-  // Ordinal emoji for history list
-  const rankIcon = pos => (['🥇', '🥈', '🥉'][pos - 1] ?? `#${pos}`);
+  const rankIcon  = pos => (['🥇', '🥈', '🥉'][pos - 1] ?? `#${pos}`);
   const rankEmoji = pos => (['🥇', '🥈', '🥉'][pos - 1] ?? `#${pos}`);
 
   const toggleHistoryItem = async (game) => {
     const gpId = game.games_played_id;
-    if (expandedHistory === gpId) {
-      setExpandedHistory(null);
-      return;
-    }
+    if (expandedHistory === gpId) { setExpandedHistory(null); return; }
     setExpandedHistory(gpId);
-    if (historyDetails[gpId]) return; // already loaded
+    if (historyDetails[gpId]) return;
     try {
-      const { data } = await axios.get(`/api/users/history-detail/${gpId}`);
+      const { data } = await api.get(`/api/users/history-detail/${gpId}`);
       setHistoryDetails(prev => ({ ...prev, [gpId]: data }));
     } catch {
       setHistoryDetails(prev => ({ ...prev, [gpId]: { error: true } }));
     }
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="page dash-page">
 
@@ -626,11 +473,11 @@ export default function Dashboard() {
             <span className="dash-title-sub">— Welcome back to your dashboard</span>
           </div>
           <div className="dash-meta-row">
-            <button className="dash-meta-link" onClick={() => setShowEditModal(true)}>
+            <button className="dash-meta-link" onClick={() => setAccountModal('edit')}>
               ⚙ Account Settings
             </button>
             <span className="dash-meta-sep">·</span>
-            <button className="dash-meta-link dash-meta-link--danger" onClick={() => setShowDeleteModal(true)}>
+            <button className="dash-meta-link dash-meta-link--danger" onClick={() => setAccountModal('delete')}>
               🗑 Delete Account
             </button>
           </div>
@@ -644,32 +491,17 @@ export default function Dashboard() {
       {chips && (
         <div className="dash-chips">
           {chips.streak > 0 && (
-            <StatChip
-              icon="🔥"
-              label="Win Streak"
-              value={chips.streak}
-              sub={`game${chips.streak !== 1 ? 's' : ''} in a row`}
-            />
+            <StatChip icon="🔥" label="Win Streak" value={chips.streak} sub={`game${chips.streak !== 1 ? 's' : ''} in a row`} />
           )}
           <StatChip icon="🌙" label="Nights Attended" value={chips.total_nights} />
           {stats && (
-            <StatChip
-              icon="🏆"
-              label="Total Wins"
-              value={Number(stats.wins ?? 0)}
-              sub={`of ${Number(stats.total_games ?? 0)} games`}
-            />
+            <StatChip icon="🏆" label="Total Wins" value={Number(stats.wins ?? 0)} sub={`of ${Number(stats.total_games ?? 0)} games`} />
           )}
           {chips.avg_position && (
             <StatChip icon="📍" label="Avg Finish" value={`#${chips.avg_position}`} />
           )}
           {chips.most_played_game && (
-            <StatChip
-              icon="🎮"
-              label="Most Played"
-              value={chips.most_played_game}
-              sub={`${chips.most_played_count}× played`}
-            />
+            <StatChip icon="🎮" label="Most Played" value={chips.most_played_game} sub={`${chips.most_played_count}× played`} />
           )}
         </div>
       )}
@@ -680,7 +512,6 @@ export default function Dashboard() {
           <h3 className="dash-section-title">Placement Breakdown</h3>
           <PlacementPie stats={stats} />
         </section>
-
         <section className="card dash-chart-half">
           <h3 className="dash-section-title">Win Rate by Game</h3>
           <WinRateChart byGame={byGame} />
@@ -696,12 +527,11 @@ export default function Dashboard() {
         <div className="history-list" style={{ marginTop: 16 }}>
           {history.length > 0
             ? history.map((game, i) => {
-                const gpId = game.games_played_id;
+                const gpId   = game.games_played_id;
                 const isOpen = expandedHistory === gpId;
                 const detail = historyDetails[gpId];
                 return (
                   <div key={`hist-${i}-${gpId}`} className="history-item">
-                    {/* ── Collapsed row ── */}
                     <div className="history-item-row" onClick={() => toggleHistoryItem(game)}>
                       <div className="history-item-left">
                         <span className={`history-chevron ${isOpen ? 'history-chevron--open' : ''}`}>▶</span>
@@ -709,22 +539,16 @@ export default function Dashboard() {
                           <div className="game-name">{game.game_name}</div>
                           <div className="game-meta">
                             {game.played_at
-                              ? new Date(game.played_at).toLocaleDateString('en-US', {
-                                  month: 'short', day: 'numeric', year: 'numeric',
-                                })
+                              ? new Date(game.played_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                               : 'Date unknown'}
                             {game.night_name && ` · ${game.night_name}`}
                           </div>
                         </div>
                       </div>
                       <div className={`game-rank ${game.is_win ? 'win' : ''}`}>
-                        {game.is_win
-                          ? '🏆 1st'
-                          : `${rankIcon(Number(game.position))} of ${game.total_players}`}
+                        {game.is_win ? '🏆 1st' : `${rankIcon(Number(game.position))} of ${game.total_players}`}
                       </div>
                     </div>
-
-                    {/* ── Expanded detail ── */}
                     {isOpen && (
                       <div className="history-expanded">
                         {!detail ? (
@@ -733,18 +557,14 @@ export default function Dashboard() {
                           <div className="history-expanded-loading">Couldn't load game details.</div>
                         ) : (
                           <>
-                            {/* Results table — sorted by position */}
                             <div className="history-results">
                               {detail.participants.map((p, pi) => {
-                                const isMe = Number(p.user_id) === Number(user.id);
-                                const pos = Number(p.position);
-                                // Compute total score if this is a scored game
-                                let score = null;
+                                // ✅ UUID string comparison — no Number() casting
+                                const isMe  = p.user_id === user.id;
+                                const pos   = Number(p.position);
+                                let score   = null;
                                 if (detail.game_type === 'scores' || detail.game_type === 'cumulative') {
-                                  score = detail.rounds.reduce((sum, r) => {
-                                    if (r.name === p.name) return sum + Number(r.score);
-                                    return sum;
-                                  }, 0);
+                                  score = detail.rounds.reduce((sum, r) => r.name === p.name ? sum + Number(r.score) : sum, 0);
                                 }
                                 return (
                                   <div key={pi} className={`history-result-row ${isMe ? 'history-result-row--me' : ''}`}>
@@ -752,20 +572,15 @@ export default function Dashboard() {
                                     <span className={`history-result-name ${isMe ? 'history-result-name--me' : ''}`}>
                                       {p.name}{isMe ? ' (you)' : ''}
                                     </span>
-                                    {score !== null && (
-                                      <span className="history-result-score">{score} pts</span>
-                                    )}
+                                    {score !== null && <span className="history-result-score">{score} pts</span>}
                                   </div>
                                 );
                               })}
                             </div>
-                            {/* View night link */}
                             {game.game_night_id && (
                               <div className="history-expanded-links">
-                                <button
-                                  className="history-link-btn"
-                                  onClick={e => { e.stopPropagation(); navigate(`/game-nights/${game.game_night_id}`); }}
-                                >
+                                <button className="history-link-btn"
+                                  onClick={e => { e.stopPropagation(); navigate(`/game-nights/${game.game_night_id}`); }}>
                                   🌙 View Game Night →
                                 </button>
                               </div>
@@ -780,11 +595,7 @@ export default function Dashboard() {
             : (
               <div style={{ padding: '32px 0', textAlign: 'center' }}>
                 <p className="sub-text">No games recorded yet.</p>
-                <button
-                  className="btn btn-primary"
-                  style={{ marginTop: 16 }}
-                  onClick={() => setShowNightModal(true)}
-                >
+                <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setShowNightModal(true)}>
                   Start your first game night
                 </button>
               </div>
@@ -794,122 +605,11 @@ export default function Dashboard() {
       </section>
 
       {/* ── Game Night Creator modal ── */}
-      <GameNightCreator
-        isOpen={showNightModal}
-        onClose={() => setShowNightModal(false)}
-        prefillGroupId={null}
-      />
+      <GameNightCreator isOpen={showNightModal} onClose={() => setShowNightModal(false)} prefillGroupId={null} />
 
-      {/* ── Edit profile modal ── */}
-      {showEditModal && (
-        <div className="modal-overlay">
-          <div className="modal-card card">
-            <h3>Update Profile</h3>
-            <form onSubmit={handleUpdate}>
-              <div className="form-group">
-                <label>Username</label>
-                <input
-                  className="input"
-                  value={editData.username}
-                  onChange={e => setEditData({ ...editData, username: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label>Email Address</label>
-                <input
-                  className="input"
-                  type="email"
-                  value={editData.email}
-                  onChange={e => setEditData({ ...editData, email: e.target.value })}
-                />
-              </div>
-              <hr className="divider-line" />
-              <div className="form-group">
-                <label>
-                  New Password{' '}
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
-                </label>
-                <div className="input-wrapper">
-                  <input
-                    className="input"
-                    type={showNew ? 'text' : 'password'}
-                    value={editData.newPass}
-                    onChange={e => setEditData({ ...editData, newPass: e.target.value })}
-                  />
-                  <button type="button" className="eye-btn" onClick={() => setShowNew(v => !v)}>
-                    <EyeIcon visible={showNew} />
-                  </button>
-                </div>
-              </div>
-              {editData.newPass && (
-                <div className="form-group">
-                  <label>Confirm New Password</label>
-                  <div className="input-wrapper">
-                    <input
-                      className="input"
-                      type={showConfirm ? 'text' : 'password'}
-                      value={editData.confirmPass}
-                      onChange={e => setEditData({ ...editData, confirmPass: e.target.value })}
-                    />
-                    <button type="button" className="eye-btn" onClick={() => setShowConfirm(v => !v)}>
-                      <EyeIcon visible={showConfirm} />
-                    </button>
-                  </div>
-                </div>
-              )}
-              {needsReauth && (
-                <div className="reauth-box">
-                  <p style={{ fontSize: 13, marginBottom: 10 }}>
-                    Confirm your current password to apply changes:
-                  </p>
-                  <div className="input-wrapper">
-                    <input
-                      className="input"
-                      type={showCurrent ? 'text' : 'password'}
-                      placeholder="Current password"
-                      required
-                      value={editData.currentPass}
-                      onChange={e => setEditData({ ...editData, currentPass: e.target.value })}
-                    />
-                    <button type="button" className="eye-btn" onClick={() => setShowCurrent(v => !v)}>
-                      <EyeIcon visible={showCurrent} />
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="modal-actions">
-                <button type="button" className="btn btn-ghost" onClick={closeEditModal}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  {needsReauth ? 'Confirm Changes' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ── Account modals (edit / delete) — all logic lives in AccountModal ── */}
+      <AccountModal mode={accountModal} onClose={() => setAccountModal(null)} />
 
-      {/* ── Delete account modal ── */}
-      {showDeleteModal && (
-        <div className="modal-overlay">
-          <div className="modal-card card">
-            <h2 style={{ color: 'var(--danger)' }}>⚠️ Irreversible Action</h2>
-            <p style={{ margin: '16px 0', color: 'var(--text-muted)' }}>
-              Are you sure? Your account will be permanently deleted. Your game history
-              will be anonymised so group stats remain intact.
-            </p>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setShowDeleteModal(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-danger" onClick={confirmDelete}>
-                Yes, Delete Account
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

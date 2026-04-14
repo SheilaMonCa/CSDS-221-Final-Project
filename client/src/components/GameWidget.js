@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'
 import toast from 'react-hot-toast';
 import './GameWidget.css';
 
@@ -69,7 +69,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
   const nameInputRef = useRef(null);
 
   useEffect(() => {
-    axios.get('/api/games').then(r => setAllGames(r.data || [])).catch(() => {});
+    api.get('/api/games').then(r => setAllGames(r.data || [])).catch(() => {});
   }, []);
 
   const suggestions = allGames
@@ -167,7 +167,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
 
     setSaving(true);
     try {
-      await axios.delete(`/api/game-nights/${widget.nightId}/games/${gameId}`);
+      await api.delete(`/api/game-nights/${widget.nightId}/games/${gameId}`);
       onRemove(widget.id);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to delete game');
@@ -186,7 +186,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
 
       if (gameType === 'cumulative' || gameType === 'scores') {
         try {
-          const { data } = await axios.get(`/api/game-nights/${widget.nightId}/games/${gameId}`);
+          const { data } = await api.get(`/api/game-nights/${widget.nightId}/games/${gameId}`);
           if (data.rounds?.length > 0) {
             // Group flat rows { round_number, attendee_id, score } into per-round objects
             const roundMap = {};
@@ -211,7 +211,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
       }
 
       // 2. Wipe DB results so re-submission is clean
-      await axios.put(`/api/game-nights/${widget.nightId}/games/${gameId}/reopen`);
+      await api.put(`/api/game-nights/${widget.nightId}/games/${gameId}/reopen`);
 
       // 3. Restore local state with pre-filled values
       setCompleted(false);
@@ -233,11 +233,11 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
 
     setSaving(true);
     try {
-      const gameRes = await axios.post('/api/games', { name: gameName.trim() });
+      const gameRes = await api.post('/api/games', { name: gameName.trim() });
       const game_id = gameRes.data?.id;
       if (!game_id) throw new Error('Could not resolve game ID');
 
-      const { data } = await axios.post(`/api/game-nights/${widget.nightId}/games`, {
+      const { data } = await api.post(`/api/game-nights/${widget.nightId}/games`, {
         game_id,
         game_type:       gameType === 'positions' ? 'winner_order' : 'cumulative',
         is_complete:     false,
@@ -276,7 +276,7 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
           position: parseInt(positionInputs[p.id], 10),
         }));
 
-        await axios.put(
+        await api.put(
           `/api/game-nights/${widget.nightId}/games/${gameId}/positions`,
           { participants }
         );
@@ -293,13 +293,13 @@ export default function GameWidget({ widget, attendees, onComplete, onRemove, on
       } else {
         // Submit each round's scores then finalize (auto-ranks by total)
         for (const round of rounds) {
-          await axios.post(
+          await api.post(
             `/api/game-nights/${widget.nightId}/games/${gameId}/rounds`,
             { scores: players.map(p => ({ attendee_id: p.id, score: parseFloat(round[p.id]) || 0 })) }
           );
         }
 
-        const { data } = await axios.post(
+        const { data } = await api.post(
           `/api/game-nights/${widget.nightId}/games/${gameId}/finalize`,
           { higher_is_better: higherIsBetter }
         );
