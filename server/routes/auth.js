@@ -36,8 +36,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// --- NEW ROUTES ADDED BELOW ---
-
 // Update Profile
 router.put('/update/:id', async (req, res) => {
   const { id } = req.params;

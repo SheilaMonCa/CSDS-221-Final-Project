@@ -187,7 +187,6 @@ router.get('/:id/history', async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // GET /api/users/:id/vs/:otherId
-// ✅ Fixed: ANY($1::uuid[]) replaces ::int[], removed parseInt() on UUID strings
 // ──────────────────────────────────────────────────────────────────────────────
 router.get('/:id/vs/:otherId', async (req, res) => {
   const { id, otherId } = req.params;

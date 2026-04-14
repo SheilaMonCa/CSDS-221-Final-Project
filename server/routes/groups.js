@@ -11,7 +11,7 @@ const generateInviteCode = () =>
 // ──────────────────────────────────────────────────────────────────────────────
 router.post("/", async (req, res) => {
   const { name } = req.body;
-  const user_id = parseInt(req.body.user_id, 10);
+  const user_id = req.body.user_id;
   if (!user_id) return res.status(400).json({ error: "Invalid user_id" });
 
   // Generate a collision-free invite code BEFORE opening a transaction.

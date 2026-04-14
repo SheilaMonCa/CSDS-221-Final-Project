@@ -9,8 +9,7 @@ const pool = require("../db");
 router.get("/:nightId/games/:gamePlayedId", async (req, res) => {
   const { gamePlayedId } = req.params;
   try {
-    // Fetch core game record. higher_is_better may not exist yet if the migration
-    // hasn't been run — we fall back gracefully to true in that case.
+    // Fetch core game record.
     let gpRes;
     try {
       gpRes = await pool.query(
@@ -21,7 +20,7 @@ router.get("/:nightId/games/:gamePlayedId", async (req, res) => {
         [gamePlayedId]
       );
     } catch (_colErr) {
-      // Column doesn't exist yet — query without it and default to true
+      // Column doesn't exist yet — fallback to older query without higher_is_better (added in later migration)
       gpRes = await pool.query(
         `SELECT gp.id, gp.game_type, gp.is_complete, TRUE AS higher_is_better, g.name AS game_name
          FROM games_played gp
